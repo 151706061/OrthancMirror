@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -364,6 +364,12 @@ TEST(Toolbox, Base64)
   std::string decoded;
   Toolbox::DecodeBase64(decoded, hello);
   ASSERT_EQ("Hello world", decoded);
+
+  // Invalid character
+  ASSERT_THROW(Toolbox::DecodeBase64(decoded, "?"), OrthancException);
+
+  // All the allowed characters
+  Toolbox::DecodeBase64(decoded, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=");
 }
 
 TEST(Toolbox, PathToExecutable)
@@ -410,10 +416,6 @@ TEST(Toolbox, ConvertFromLatin1)
   // This is a Latin-1 test string
   const unsigned char data[10] = { 0xe0, 0xe9, 0xea, 0xe7, 0x26, 0xc6, 0x61, 0x62, 0x63, 0x00 };
   
-  /*FILE* f = fopen("/tmp/tutu", "w");
-  fwrite(&data[0], 9, 1, f);
-  fclose(f);*/
-
   std::string s((char*) &data[0], 10);
   ASSERT_EQ("&abc", Toolbox::ConvertToAscii(s));
 
@@ -458,7 +460,7 @@ TEST(Toolbox, UrlDecode)
 }
 
 
-#if defined(__linux)
+#if defined(__linux__)
 TEST(OrthancInitialization, AbsoluteDirectory)
 {
   ASSERT_EQ("/tmp/hello", Configuration::InterpretRelativePath("/tmp", "hello"));
@@ -558,6 +560,16 @@ TEST(Toolbox, WriteFile)
     ASSERT_EQ(11u, t.size());
     ASSERT_EQ(0, t[5]);
     ASSERT_EQ(0, memcmp(s.c_str(), t.c_str(), s.size()));
+
+    std::string h;
+    ASSERT_EQ(true, Toolbox::ReadHeader(h, path.c_str(), 1));
+    ASSERT_EQ(1u, h.size());
+    ASSERT_EQ('H', h[0]);
+    ASSERT_TRUE(Toolbox::ReadHeader(h, path.c_str(), 0));
+    ASSERT_EQ(0u, h.size());
+    ASSERT_FALSE(Toolbox::ReadHeader(h, path.c_str(), 32));
+    ASSERT_EQ(11u, h.size());
+    ASSERT_EQ(0, memcmp(s.c_str(), h.c_str(), s.size()));
   }
 
   std::string u;
@@ -622,7 +634,7 @@ TEST(Toolbox, Enumerations)
 
 
 
-#if defined(__linux)
+#if defined(__linux__)
 #include <endian.h>
 #elif defined(__FreeBSD__)
 #include <machine/endian.h>
@@ -647,7 +659,7 @@ TEST(Toolbox, Endianness)
    * Linux.
    **/
   
-#elif defined(__linux) || defined(__FreeBSD_kernel__)
+#elif defined(__linux__) || defined(__FreeBSD_kernel__)
 
 #if !defined(__BYTE_ORDER)
 #  error Support your platform here
@@ -675,6 +687,188 @@ TEST(Toolbox, Endianness)
 #error Support your platform here
 #endif
 }
+
+
+#include "../Core/Endianness.h"
+
+static void ASSERT_EQ16(uint16_t a, uint16_t b)
+{
+#ifdef __MINGW32__
+  // This cast solves a linking problem with MinGW
+  ASSERT_EQ(static_cast<unsigned int>(a), static_cast<unsigned int>(b));
+#else
+  ASSERT_EQ(a, b);
+#endif
+}
+
+static void ASSERT_NE16(uint16_t a, uint16_t b)
+{
+#ifdef __MINGW32__
+  // This cast solves a linking problem with MinGW
+  ASSERT_NE(static_cast<unsigned int>(a), static_cast<unsigned int>(b));
+#else
+  ASSERT_NE(a, b);
+#endif
+}
+
+static void ASSERT_EQ32(uint32_t a, uint32_t b)
+{
+#ifdef __MINGW32__
+  // This cast solves a linking problem with MinGW
+  ASSERT_EQ(static_cast<unsigned int>(a), static_cast<unsigned int>(b));
+#else
+  ASSERT_EQ(a, b);
+#endif
+}
+
+static void ASSERT_NE32(uint32_t a, uint32_t b)
+{
+#ifdef __MINGW32__
+  // This cast solves a linking problem with MinGW
+  ASSERT_NE(static_cast<unsigned int>(a), static_cast<unsigned int>(b));
+#else
+  ASSERT_NE(a, b);
+#endif
+}
+
+static void ASSERT_EQ64(uint64_t a, uint64_t b)
+{
+#ifdef __MINGW32__
+  // This cast solves a linking problem with MinGW
+  ASSERT_EQ(static_cast<unsigned int>(a), static_cast<unsigned int>(b));
+#else
+  ASSERT_EQ(a, b);
+#endif
+}
+
+static void ASSERT_NE64(uint64_t a, uint64_t b)
+{
+#ifdef __MINGW32__
+  // This cast solves a linking problem with MinGW
+  ASSERT_NE(static_cast<unsigned long long>(a), static_cast<unsigned long long>(b));
+#else
+  ASSERT_NE(a, b);
+#endif
+}
+
+
+
+TEST(Toolbox, EndiannessConversions16)
+{
+  Endianness e = Toolbox::DetectEndianness();
+
+  for (unsigned int i = 0; i < 65536; i += 17)
+  {
+    uint16_t v = static_cast<uint16_t>(i);
+    ASSERT_EQ16(v, be16toh(htobe16(v)));
+    ASSERT_EQ16(v, le16toh(htole16(v)));
+
+    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&v);
+    if (bytes[0] != bytes[1])
+    {
+      ASSERT_NE16(v, le16toh(htobe16(v)));
+      ASSERT_NE16(v, be16toh(htole16(v)));
+    }
+    else
+    {
+      ASSERT_EQ16(v, le16toh(htobe16(v)));
+      ASSERT_EQ16(v, be16toh(htole16(v)));
+    }
+
+    switch (e)
+    {
+      case Endianness_Little:
+        ASSERT_EQ16(v, htole16(v));
+        if (bytes[0] != bytes[1])
+        {
+          ASSERT_NE16(v, htobe16(v));
+        }
+        else
+        {
+          ASSERT_EQ16(v, htobe16(v));
+        }
+        break;
+
+      case Endianness_Big:
+        ASSERT_EQ16(v, htobe16(v));
+        if (bytes[0] != bytes[1])
+        {
+          ASSERT_NE16(v, htole16(v));
+        }
+        else
+        {
+          ASSERT_EQ16(v, htole16(v));
+        }
+        break;
+
+      default:
+        throw OrthancException(ErrorCode_ParameterOutOfRange);
+    }
+  }
+}
+
+
+TEST(Toolbox, EndiannessConversions32)
+{
+  const uint32_t v = 0xff010203u;
+  const uint32_t r = 0x030201ffu;
+  ASSERT_EQ32(v, be32toh(htobe32(v)));
+  ASSERT_EQ32(v, le32toh(htole32(v)));
+  ASSERT_NE32(v, be32toh(htole32(v)));
+  ASSERT_NE32(v, le32toh(htobe32(v)));
+
+  switch (Toolbox::DetectEndianness())
+  {
+    case Endianness_Little:
+      ASSERT_EQ32(r, htobe32(v));
+      ASSERT_EQ32(v, htole32(v));
+      ASSERT_EQ32(r, be32toh(v));
+      ASSERT_EQ32(v, le32toh(v));
+      break;
+
+    case Endianness_Big:
+      ASSERT_EQ32(v, htobe32(v));
+      ASSERT_EQ32(r, htole32(v));
+      ASSERT_EQ32(v, be32toh(v));
+      ASSERT_EQ32(r, le32toh(v));
+      break;
+
+    default:
+      throw OrthancException(ErrorCode_ParameterOutOfRange);
+  }
+}
+
+
+TEST(Toolbox, EndiannessConversions64)
+{
+  const uint64_t v = 0xff01020304050607LL;
+  const uint64_t r = 0x07060504030201ffLL;
+  ASSERT_EQ64(v, be64toh(htobe64(v)));
+  ASSERT_EQ64(v, le64toh(htole64(v)));
+  ASSERT_NE64(v, be64toh(htole64(v)));
+  ASSERT_NE64(v, le64toh(htobe64(v)));
+
+  switch (Toolbox::DetectEndianness())
+  {
+    case Endianness_Little:
+      ASSERT_EQ64(r, htobe64(v));
+      ASSERT_EQ64(v, htole64(v));
+      ASSERT_EQ64(r, be64toh(v));
+      ASSERT_EQ64(v, le64toh(v));
+      break;
+
+    case Endianness_Big:
+      ASSERT_EQ64(v, htobe64(v));
+      ASSERT_EQ64(r, htole64(v));
+      ASSERT_EQ64(v, be64toh(v));
+      ASSERT_EQ64(r, le64toh(v));
+      break;
+
+    default:
+      throw OrthancException(ErrorCode_ParameterOutOfRange);
+  }
+}
+
 
 
 #if ORTHANC_PUGIXML_ENABLED == 1
@@ -729,6 +923,62 @@ TEST(Toolbox, StartsWith)
   ASSERT_FALSE(Toolbox::StartsWith("h", "hello"));
   ASSERT_TRUE(Toolbox::StartsWith("h", "h"));
   ASSERT_FALSE(Toolbox::StartsWith("", "h"));
+}
+
+
+TEST(Toolbox, UriEncode)
+{
+  std::string s;
+
+  // Unreserved characters must not be modified
+  std::string t = "aAzZ09.-~_";
+  Toolbox::UriEncode(s, t); 
+  ASSERT_EQ(t, s);
+
+  Toolbox::UriEncode(s, "!#$&'()*+,/:;=?@[]"); ASSERT_EQ("%21%23%24%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D", s);  
+  Toolbox::UriEncode(s, "%"); ASSERT_EQ("%25", s);
+
+  // Encode characters from UTF-8. This is the test string from the
+  // file "../Resources/EncodingTests.py"
+  Toolbox::UriEncode(s, "\x54\x65\x73\x74\xc3\xa9\xc3\xa4\xc3\xb6\xc3\xb2\xd0\x94\xce\x98\xc4\x9d\xd7\x93\xd8\xb5\xc4\xb7\xd1\x9b\xe0\xb9\x9b\xef\xbe\x88\xc4\xb0"); 
+  ASSERT_EQ("Test%C3%A9%C3%A4%C3%B6%C3%B2%D0%94%CE%98%C4%9D%D7%93%D8%B5%C4%B7%D1%9B%E0%B9%9B%EF%BE%88%C4%B0", s);
+}
+
+
+TEST(Toolbox, AccessJson)
+{
+  Json::Value v = Json::arrayValue;
+  ASSERT_EQ("nope", Toolbox::GetJsonStringField(v, "hello", "nope"));
+
+  v = Json::objectValue;
+  ASSERT_EQ("nope", Toolbox::GetJsonStringField(v, "hello", "nope"));
+  ASSERT_EQ(-10, Toolbox::GetJsonIntegerField(v, "hello", -10));
+  ASSERT_EQ(10, Toolbox::GetJsonUnsignedIntegerField(v, "hello", 10));
+  ASSERT_TRUE(Toolbox::GetJsonBooleanField(v, "hello", true));
+
+  v["hello"] = "world";
+  ASSERT_EQ("world", Toolbox::GetJsonStringField(v, "hello", "nope"));
+  ASSERT_THROW(Toolbox::GetJsonIntegerField(v, "hello", -10), OrthancException);
+  ASSERT_THROW(Toolbox::GetJsonUnsignedIntegerField(v, "hello", 10), OrthancException);
+  ASSERT_THROW(Toolbox::GetJsonBooleanField(v, "hello", true), OrthancException);
+
+  v["hello"] = -42;
+  ASSERT_THROW(Toolbox::GetJsonStringField(v, "hello", "nope"), OrthancException);
+  ASSERT_EQ(-42, Toolbox::GetJsonIntegerField(v, "hello", -10));
+  ASSERT_THROW(Toolbox::GetJsonUnsignedIntegerField(v, "hello", 10), OrthancException);
+  ASSERT_THROW(Toolbox::GetJsonBooleanField(v, "hello", true), OrthancException);
+
+  v["hello"] = 42;
+  ASSERT_THROW(Toolbox::GetJsonStringField(v, "hello", "nope"), OrthancException);
+  ASSERT_EQ(42, Toolbox::GetJsonIntegerField(v, "hello", -10));
+  ASSERT_EQ(42, Toolbox::GetJsonUnsignedIntegerField(v, "hello", 10));
+  ASSERT_THROW(Toolbox::GetJsonBooleanField(v, "hello", true), OrthancException);
+
+  v["hello"] = false;
+  ASSERT_THROW(Toolbox::GetJsonStringField(v, "hello", "nope"), OrthancException);
+  ASSERT_THROW(Toolbox::GetJsonIntegerField(v, "hello", -10), OrthancException);
+  ASSERT_THROW(Toolbox::GetJsonUnsignedIntegerField(v, "hello", 10), OrthancException);
+  ASSERT_FALSE(Toolbox::GetJsonBooleanField(v, "hello", true));
 }
 
 

@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -66,7 +66,10 @@ TEST(PngWriter, ColorPattern)
     }
   }
 
-  w.WriteToFile("UnitTestsResults/ColorPattern.png", width, height, pitch, Orthanc::PixelFormat_RGB24, &image[0]);
+  Orthanc::ImageAccessor accessor;
+  accessor.AssignReadOnly(Orthanc::PixelFormat_RGB24, width, height, pitch, &image[0]);
+
+  w.WriteToFile("UnitTestsResults/ColorPattern.png", accessor);
 
   std::string f, md5;
   Orthanc::Toolbox::ReadFile(f, "UnitTestsResults/ColorPattern.png");
@@ -91,7 +94,10 @@ TEST(PngWriter, Gray8Pattern)
     }
   }
 
-  w.WriteToFile("UnitTestsResults/Gray8Pattern.png", width, height, pitch, Orthanc::PixelFormat_Grayscale8, &image[0]);
+  Orthanc::ImageAccessor accessor;
+  accessor.AssignReadOnly(Orthanc::PixelFormat_Grayscale8, width, height, pitch, &image[0]);
+
+  w.WriteToFile("UnitTestsResults/Gray8Pattern.png", accessor);
 
   std::string f, md5;
   Orthanc::Toolbox::ReadFile(f, "UnitTestsResults/Gray8Pattern.png");
@@ -118,7 +124,9 @@ TEST(PngWriter, Gray16Pattern)
     }
   }
 
-  w.WriteToFile("UnitTestsResults/Gray16Pattern.png", width, height, pitch, Orthanc::PixelFormat_Grayscale16, &image[0]);
+  Orthanc::ImageAccessor accessor;
+  accessor.AssignReadOnly(Orthanc::PixelFormat_Grayscale16, width, height, pitch, &image[0]);
+  w.WriteToFile("UnitTestsResults/Gray16Pattern.png", accessor);
 
   std::string f, md5;
   Orthanc::Toolbox::ReadFile(f, "UnitTestsResults/Gray16Pattern.png");
@@ -145,8 +153,11 @@ TEST(PngWriter, EndToEnd)
     }
   }
 
+  Orthanc::ImageAccessor accessor;
+  accessor.AssignReadOnly(Orthanc::PixelFormat_Grayscale16, width, height, pitch, &image[0]);
+
   std::string s;
-  w.WriteToMemory(s, width, height, pitch, Orthanc::PixelFormat_Grayscale16, &image[0]);
+  w.WriteToMemory(s, accessor);
 
   {
     Orthanc::PngReader r;
@@ -225,12 +236,12 @@ TEST(JpegWriter, Basic)
   {
     Orthanc::JpegReader r1, r2;
     r1.ReadFromFile("UnitTestsResults/hello.jpg");
-    ASSERT_EQ(16, r1.GetWidth());
-    ASSERT_EQ(16, r1.GetHeight());
+    ASSERT_EQ(16u, r1.GetWidth());
+    ASSERT_EQ(16u, r1.GetHeight());
 
     r2.ReadFromMemory(s);
-    ASSERT_EQ(16, r2.GetWidth());
-    ASSERT_EQ(16, r2.GetHeight());
+    ASSERT_EQ(16u, r2.GetWidth());
+    ASSERT_EQ(16u, r2.GetHeight());
 
     for (unsigned int y = 0; y < r1.GetHeight(); y++)
     {
@@ -250,7 +261,7 @@ TEST(Font, Basic)
   Orthanc::Image s(Orthanc::PixelFormat_RGB24, 640, 480);
   memset(s.GetBuffer(), 0, s.GetPitch() * s.GetHeight());
 
-  ASSERT_GE(1, Orthanc::Configuration::GetFontRegistry().GetSize());
+  ASSERT_GE(1u, Orthanc::Configuration::GetFontRegistry().GetSize());
   Orthanc::Configuration::GetFontRegistry().GetFont(0).Draw(s, "Hello world É\n\rComment ça va ?\nq", 50, 60, 255, 0, 0);
 
   Orthanc::PngWriter w;

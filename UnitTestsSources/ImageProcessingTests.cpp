@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -44,18 +44,18 @@ TEST(DicomImageInformation, ExtractPixelFormat1)
 {
   // Cardiac/MR*
   DicomMap m;
-  m.SetValue(DICOM_TAG_ROWS, "24");
-  m.SetValue(DICOM_TAG_COLUMNS, "16");
-  m.SetValue(DICOM_TAG_BITS_ALLOCATED, "16");
-  m.SetValue(DICOM_TAG_SAMPLES_PER_PIXEL, "1");
-  m.SetValue(DICOM_TAG_BITS_STORED, "12");
-  m.SetValue(DICOM_TAG_HIGH_BIT, "11");
-  m.SetValue(DICOM_TAG_PIXEL_REPRESENTATION, "0");
-  m.SetValue(DICOM_TAG_PHOTOMETRIC_INTERPRETATION, "MONOCHROME2");
+  m.SetValue(DICOM_TAG_ROWS, "24", false);
+  m.SetValue(DICOM_TAG_COLUMNS, "16", false);
+  m.SetValue(DICOM_TAG_BITS_ALLOCATED, "16", false);
+  m.SetValue(DICOM_TAG_SAMPLES_PER_PIXEL, "1", false);
+  m.SetValue(DICOM_TAG_BITS_STORED, "12", false);
+  m.SetValue(DICOM_TAG_HIGH_BIT, "11", false);
+  m.SetValue(DICOM_TAG_PIXEL_REPRESENTATION, "0", false);
+  m.SetValue(DICOM_TAG_PHOTOMETRIC_INTERPRETATION, "MONOCHROME2", false);
 
   DicomImageInformation info(m);
   PixelFormat format;
-  ASSERT_TRUE(info.ExtractPixelFormat(format));
+  ASSERT_TRUE(info.ExtractPixelFormat(format, false));
   ASSERT_EQ(PixelFormat_Grayscale16, format);
 }
 
@@ -64,17 +64,17 @@ TEST(DicomImageInformation, ExtractPixelFormat2)
 {
   // Delphine CT
   DicomMap m;
-  m.SetValue(DICOM_TAG_ROWS, "24");
-  m.SetValue(DICOM_TAG_COLUMNS, "16");
-  m.SetValue(DICOM_TAG_BITS_ALLOCATED, "16");
-  m.SetValue(DICOM_TAG_SAMPLES_PER_PIXEL, "1");
-  m.SetValue(DICOM_TAG_BITS_STORED, "16");
-  m.SetValue(DICOM_TAG_HIGH_BIT, "15");
-  m.SetValue(DICOM_TAG_PIXEL_REPRESENTATION, "1");
-  m.SetValue(DICOM_TAG_PHOTOMETRIC_INTERPRETATION, "MONOCHROME2");
+  m.SetValue(DICOM_TAG_ROWS, "24", false);
+  m.SetValue(DICOM_TAG_COLUMNS, "16", false);
+  m.SetValue(DICOM_TAG_BITS_ALLOCATED, "16", false);
+  m.SetValue(DICOM_TAG_SAMPLES_PER_PIXEL, "1", false);
+  m.SetValue(DICOM_TAG_BITS_STORED, "16", false);
+  m.SetValue(DICOM_TAG_HIGH_BIT, "15", false);
+  m.SetValue(DICOM_TAG_PIXEL_REPRESENTATION, "1", false);
+  m.SetValue(DICOM_TAG_PHOTOMETRIC_INTERPRETATION, "MONOCHROME2", false);
 
   DicomImageInformation info(m);
   PixelFormat format;
-  ASSERT_TRUE(info.ExtractPixelFormat(format));
+  ASSERT_TRUE(info.ExtractPixelFormat(format, false));
   ASSERT_EQ(PixelFormat_SignedGrayscale16, format);
 }

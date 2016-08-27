@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -30,67 +30,27 @@
  **/
 
 
-#include "PrecompiledHeadersServer.h"
-#include "OrthancPeerParameters.h"
+#pragma once
 
-#include "../Core/OrthancException.h"
+#if ORTHANC_PKCS11_ENABLED != 1 || ORTHANC_SSL_ENABLED != 1
+#  error This file cannot be used if OpenSSL or PKCS#11 support is disabled
+#endif
+
+
+#include <string>
 
 namespace Orthanc
 {
-  OrthancPeerParameters::OrthancPeerParameters() : 
-    url_("http://localhost:8042/")
+  namespace Pkcs11
   {
-  }
+    const char* GetEngineIdentifier();
 
+    bool IsInitialized();
 
-  void OrthancPeerParameters::FromJson(const Json::Value& peer)
-  {
-    if (!peer.isArray() ||
-        (peer.size() != 1 && peer.size() != 3))
-    {
-      throw OrthancException(ErrorCode_BadFileFormat);
-    }
+    void Initialize(const std::string& module,
+                    const std::string& pin,
+                    bool verbose);
 
-    std::string url;
-
-    try
-    {
-      url = peer.get(0u, "").asString();
-
-      if (peer.size() == 1)
-      {
-        SetUsername("");
-        SetPassword("");
-      }
-      else if (peer.size() == 3)
-      {
-        SetUsername(peer.get(1u, "").asString());
-        SetPassword(peer.get(2u, "").asString());
-      }
-      else
-      {
-        throw OrthancException(ErrorCode_BadFileFormat);
-      }
-    }
-    catch (...)
-    {
-      throw OrthancException(ErrorCode_BadFileFormat);
-    }
-
-    if (url.size() != 0 && url[url.size() - 1] != '/')
-    {
-      url += '/';
-    }
-
-    SetUrl(url);
-  }
-
-
-  void OrthancPeerParameters::ToJson(Json::Value& value) const
-  {
-    value = Json::arrayValue;
-    value.append(GetUrl());
-    value.append(GetUsername());
-    value.append(GetPassword());
+    void Finalize();
   }
 }

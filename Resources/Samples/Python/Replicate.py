@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 # Orthanc - A Lightweight, RESTful DICOM Store
-# Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+# Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
 # Department, University Hospital of Liege, Belgium
 #
 # This program is free software: you can redistribute it and/or
@@ -33,7 +33,7 @@ Script to copy the content of one Orthanc server to another Orthanc
 server through their REST API.
 
 Usage: %s [SourceURI] [TargetURI]
-For instance: %s http://orthanc:password@localhost:8042/ http://localhost:8043/
+For instance: %s http://orthanc:password@127.0.0.1:8042/ http://127.0.0.1:8043/
 """ % (sys.argv[0], sys.argv[0]))
     exit(-1)
 

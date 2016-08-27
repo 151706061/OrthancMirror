@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -32,7 +32,7 @@
 
 #pragma once
 
-#include "IHttpHandler.h"
+#include "IIncomingHttpRequestFilter.h"
 
 #include "../OrthancException.h"
 
@@ -46,21 +46,7 @@ namespace Orthanc
 {
   class ChunkStore;
 
-  class IIncomingHttpRequestFilter
-  {
-  public:
-    virtual ~IIncomingHttpRequestFilter()
-    {
-    }
-
-    virtual bool IsAllowed(HttpMethod method,
-                           const char* uri,
-                           const char* ip,
-                           const char* username) const = 0;
-  };
-
-
-  class IHttpExceptionFormatter
+  class IHttpExceptionFormatter : public boost::noncopyable
   {
   public:
     virtual ~IHttpExceptionFormatter()

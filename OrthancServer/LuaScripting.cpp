@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -253,7 +253,8 @@ namespace Orthanc
       LOG(INFO) << "Lua script to send resource " << parameters["Resource"].asString()
                 << " to modality " << modality << " using Store-SCU";
       return new StoreScuCommand(context_, localAet,
-                                 Configuration::GetModalityUsingSymbolicName(modality), true);
+                                 Configuration::GetModalityUsingSymbolicName(modality), 
+                                 true, 0 /* not a C-MOVE */);
     }
 
     if (operation == "store-peer")
@@ -262,7 +263,7 @@ namespace Orthanc
       LOG(INFO) << "Lua script to send resource " << parameters["Resource"].asString()
                 << " to peer " << peer << " using HTTP";
 
-      OrthancPeerParameters parameters;
+      WebServiceParameters parameters;
       Configuration::GetOrthancPeer(parameters, peer);
       return new StorePeerCommand(context_, parameters, true);
     }
@@ -390,7 +391,6 @@ namespace Orthanc
     lua_.RegisterFunction("GetOrthancConfiguration", GetOrthancConfiguration);
 
     lua_.Execute(Orthanc::EmbeddedResources::LUA_TOOLBOX);
-    lua_.SetHttpProxy(Configuration::GetGlobalStringParameter("HttpProxy", ""));
   }
 
 

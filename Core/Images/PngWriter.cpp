@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -202,16 +202,16 @@ namespace Orthanc
   }
 
 
-  void PngWriter::WriteToFile(const char* filename,
-                              unsigned int width,
-                              unsigned int height,
-                              unsigned int pitch,
-                              PixelFormat format,
-                              const void* buffer)
+  void PngWriter::WriteToFileInternal(const std::string& filename,
+                                      unsigned int width,
+                                      unsigned int height,
+                                      unsigned int pitch,
+                                      PixelFormat format,
+                                      const void* buffer)
   {
     Prepare(width, height, pitch, format, buffer);
 
-    FILE* fp = fopen(filename, "wb");
+    FILE* fp = Toolbox::OpenFile(filename, FileMode_WriteBinary);
     if (!fp)
     {
       throw OrthancException(ErrorCode_CannotWriteFile);
@@ -232,7 +232,6 @@ namespace Orthanc
 
 
 
-
   static void MemoryCallback(png_structp png_ptr, 
                              png_bytep data, 
                              png_size_t size)
@@ -243,12 +242,12 @@ namespace Orthanc
 
 
 
-  void PngWriter::WriteToMemory(std::string& png,
-                                unsigned int width,
-                                unsigned int height,
-                                unsigned int pitch,
-                                PixelFormat format,
-                                const void* buffer)
+  void PngWriter::WriteToMemoryInternal(std::string& png,
+                                        unsigned int width,
+                                        unsigned int height,
+                                        unsigned int pitch,
+                                        PixelFormat format,
+                                        const void* buffer)
   {
     ChunkedBuffer chunks;
 

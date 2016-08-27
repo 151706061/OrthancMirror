@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -102,11 +102,6 @@ namespace Orthanc
                             const char* password)
     {
       httpClient_.SetCredentials(username, password);
-    }
-
-    void SetHttpProxy(const std::string& proxy)
-    {
-      httpClient_.SetProxy(proxy);
     }
 
     void RegisterFunction(const char* name,

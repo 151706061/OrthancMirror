@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -40,11 +40,13 @@ namespace Orthanc
   StoreScuCommand::StoreScuCommand(ServerContext& context,
                                    const std::string& localAet,
                                    const RemoteModalityParameters& modality,
-                                   bool ignoreExceptions) : 
+                                   bool ignoreExceptions,
+                                   uint16_t moveOriginatorID) : 
     context_(context),
     modality_(modality),
     ignoreExceptions_(ignoreExceptions),
-    localAet_(localAet)
+    localAet_(localAet),
+    moveOriginatorID_(moveOriginatorID)
   {
   }
 
@@ -63,7 +65,8 @@ namespace Orthanc
       {
         std::string dicom;
         context_.ReadFile(dicom, *it, FileContentType_Dicom);
-        locker.GetConnection().Store(dicom);
+
+        locker.GetConnection().Store(dicom, moveOriginatorID_);
 
         // Only chain with other commands if this command succeeds
         outputs.push_back(*it);

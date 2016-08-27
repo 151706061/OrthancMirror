@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -44,7 +44,7 @@
 
 #include <boost/thread.hpp>
 
-#if defined(__linux)
+#if defined(__linux__)
 #include <cstdlib>
 #endif
 
@@ -97,7 +97,7 @@ namespace Orthanc
     worklistRequestHandlerFactory_ = NULL;
     applicationEntityFilter_ = NULL;
     checkCalledAet_ = true;
-    clientTimeout_ = 30;
+    associationTimeout_ = 30;
     continue_ = false;
   }
 
@@ -121,15 +121,18 @@ namespace Orthanc
     return port_;
   }
 
-  void DicomServer::SetClientTimeout(uint32_t timeout)
+  void DicomServer::SetAssociationTimeout(uint32_t seconds)
   {
+    LOG(INFO) << "Setting timeout for DICOM connections if Orthanc acts as SCP (server): " 
+              << seconds << " seconds (0 = no timeout)";
+
     Stop();
-    clientTimeout_ = timeout;
+    associationTimeout_ = seconds;
   }
 
-  uint32_t DicomServer::GetClientTimeout() const
+  uint32_t DicomServer::GetAssociationTimeout() const
   {
-    return clientTimeout_;
+    return associationTimeout_;
   }
 
 

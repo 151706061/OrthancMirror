@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -37,15 +37,24 @@
 
 namespace Orthanc
 {
-  class OrthancPeerParameters
+  class WebServiceParameters
   {
   private:
+    bool        advancedFormat_;
     std::string url_;
     std::string username_;
     std::string password_;
+    std::string certificateFile_;
+    std::string certificateKeyFile_;
+    std::string certificateKeyPassword_;
+    bool        pkcs11Enabled_;
+
+    void FromJsonArray(const Json::Value& peer);
+
+    void FromJsonObject(const Json::Value& peer);
 
   public:
-    OrthancPeerParameters();
+    WebServiceParameters();
 
     const std::string& GetUrl() const
     {
@@ -75,6 +84,37 @@ namespace Orthanc
     void SetPassword(const std::string& password)
     {
       password_ = password;
+    }
+
+    void ClearClientCertificate();
+
+    void SetClientCertificate(const std::string& certificateFile,
+                              const std::string& certificateKeyFile,
+                              const std::string& certificateKeyPassword);
+
+    const std::string& GetCertificateFile() const
+    {
+      return certificateFile_;
+    }
+
+    const std::string& GetCertificateKeyFile() const
+    {
+      return certificateKeyFile_;
+    }
+
+    const std::string& GetCertificateKeyPassword() const
+    {
+      return certificateKeyPassword_;
+    }
+
+    void SetPkcs11Enabled(bool pkcs11Enabled)
+    {
+      pkcs11Enabled_ = pkcs11Enabled;
+    }
+
+    bool IsPkcs11Enabled() const
+    {
+      return pkcs11Enabled_;
     }
 
     void FromJson(const Json::Value& peer);

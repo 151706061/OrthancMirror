@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -32,15 +32,27 @@
 
 #pragma once
 
-#include "ImageAccessor.h"
-
-#include <string>
-#include <stdint.h>
+#include "IImageWriter.h"
 
 namespace Orthanc
 {
-  class JpegWriter
+  class JpegWriter : public IImageWriter
   {
+  protected:
+    virtual void WriteToFileInternal(const std::string& filename,
+                                     unsigned int width,
+                                     unsigned int height,
+                                     unsigned int pitch,
+                                     PixelFormat format,
+                                     const void* buffer);
+
+    virtual void WriteToMemoryInternal(std::string& jpeg,
+                                       unsigned int width,
+                                       unsigned int height,
+                                       unsigned int pitch,
+                                       PixelFormat format,
+                                       const void* buffer);
+
   private:
     uint8_t  quality_;
 
@@ -54,34 +66,6 @@ namespace Orthanc
     uint8_t GetQuality() const
     {
       return quality_;
-    }
-
-    void WriteToFile(const char* filename,
-                     unsigned int width,
-                     unsigned int height,
-                     unsigned int pitch,
-                     PixelFormat format,
-                     const void* buffer);
-
-    void WriteToMemory(std::string& jpeg,
-                       unsigned int width,
-                       unsigned int height,
-                       unsigned int pitch,
-                       PixelFormat format,
-                       const void* buffer);
-
-    void WriteToFile(const char* filename,
-                     const ImageAccessor& accessor)
-    {
-      WriteToFile(filename, accessor.GetWidth(), accessor.GetHeight(),
-                  accessor.GetPitch(), accessor.GetFormat(), accessor.GetConstBuffer());
-    }
-
-    void WriteToMemory(std::string& jpeg,
-                       const ImageAccessor& accessor)
-    {
-      WriteToMemory(jpeg, accessor.GetWidth(), accessor.GetHeight(),
-                    accessor.GetPitch(), accessor.GetFormat(), accessor.GetConstBuffer());
     }
   };
 }

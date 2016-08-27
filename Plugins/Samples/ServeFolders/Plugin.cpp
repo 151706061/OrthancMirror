@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -18,16 +18,31 @@
  **/
 
 
-#include <orthanc/OrthancCPlugin.h>
+#include "../Common/OrthancPluginCppWrapper.h"
 
 #include <json/reader.h>
 #include <json/value.h>
 #include <boost/filesystem.hpp>
+#include <boost/date_time/posix_time/posix_time.hpp>
 
 
 static OrthancPluginContext* context_ = NULL;
 static std::map<std::string, std::string> folders_;
 static const char* INDEX_URI = "/app/plugin-serve-folders.html";
+static bool allowCache_ = true;
+static bool generateETag_ = true;  // TODO parameter
+
+
+static void SetHttpHeaders(OrthancPluginRestOutput* output)
+{
+  if (!allowCache_)
+  {
+    // http://stackoverflow.com/a/2068407/881731
+    OrthancPluginSetHttpHeader(context_, output, "Cache-Control", "no-cache, no-store, must-revalidate");
+    OrthancPluginSetHttpHeader(context_, output, "Pragma", "no-cache");
+    OrthancPluginSetHttpHeader(context_, output, "Expires", "0");
+  }
+}
 
 
 static const char* GetMimeType(const std::string& path)
@@ -57,7 +72,8 @@ static const char* GetMimeType(const std::string& path)
   {
     return "image/svg+xml";
   }
-  else if (extension == ".json")
+  else if (extension == ".json" ||
+           extension == ".nmf")
   {
     return "application/json";
   }
@@ -69,13 +85,22 @@ static const char* GetMimeType(const std::string& path)
   {
     return "image/png";
   }
-  else if (extension == ".jpg" || extension == ".jpeg")
+  else if (extension == ".jpg" || 
+           extension == ".jpeg")
   {
     return "image/jpeg";
   }
   else if (extension == ".woff")
   {
     return "application/x-font-woff";
+  }
+  else if (extension == ".pexe")
+  {
+    return "application/x-pnacl";
+  }
+  else if (extension == ".nexe")
+  {
+    return "application/x-nacl";
   }
   else
   {
@@ -89,16 +114,16 @@ static const char* GetMimeType(const std::string& path)
 static bool ReadFile(std::string& target,
                      const std::string& path)
 {
-  OrthancPluginMemoryBuffer buffer;
-  if (OrthancPluginReadFile(context_, &buffer, path.c_str()))
+  try
+  {
+    OrthancPlugins::MemoryBuffer buffer(context_);
+    buffer.ReadFile(path);
+    buffer.ToString(target);
+    return true;
+  }
+  catch (OrthancPlugins::PluginException)
   {
     return false;
-  }
-  else
-  {
-    target.assign(reinterpret_cast<const char*>(buffer.data), buffer.size);
-    OrthancPluginFreeMemoryBuffer(context_, &buffer);
-    return true;
   }
 }
 
@@ -198,7 +223,10 @@ static OrthancPluginErrorCode FolderCallback(OrthancPluginRestOutput* output,
 
       for (fs::directory_iterator it(parent) ; it != end; ++it)
       {
-        if (fs::is_regular_file(it->status()))
+        fs::file_type type = it->status().type();
+
+        if (type == fs::regular_file ||
+            type == fs::reparse_file)  // cf. BitBucket issue #11
         {
           std::string f = it->path().filename().string();
           s += "      <li><a href=\"" + f + "\">" + f + "</a></li>\n";
@@ -209,6 +237,7 @@ static OrthancPluginErrorCode FolderCallback(OrthancPluginRestOutput* output,
       s += "  </body>\n";
       s += "</html>\n";
 
+      SetHttpHeaders(output);
       OrthancPluginAnswerBuffer(context_, output, s.c_str(), s.size(), "text/html");
     }
     else
@@ -220,6 +249,19 @@ static OrthancPluginErrorCode FolderCallback(OrthancPluginRestOutput* output,
       if (ReadFile(s, path))
       {
         const char* resource = s.size() ? s.c_str() : NULL;
+
+        if (generateETag_)
+        {
+          OrthancPlugins::OrthancString md5(context_, OrthancPluginComputeMd5(context_, resource, s.size()));
+          std::string etag = "\"" + std::string(md5.GetContent()) + "\"";
+          OrthancPluginSetHttpHeader(context_, output, "ETag", etag.c_str());
+        }
+
+        boost::posix_time::ptime lastModification = boost::posix_time::from_time_t(fs::last_write_time(path));
+        std::string t = boost::posix_time::to_iso_string(lastModification);
+        OrthancPluginSetHttpHeader(context_, output, "Last-Modified", t.c_str());
+
+        SetHttpHeaders(output);
         OrthancPluginAnswerBuffer(context_, output, resource, s.size(), mime);
       }
       else
@@ -266,6 +308,7 @@ static OrthancPluginErrorCode ListServedFolders(OrthancPluginRestOutput* output,
 
   s += "</body></html>\n";
 
+  SetHttpHeaders(output);
   OrthancPluginAnswerBuffer(context_, output, s.c_str(), s.size(), "text/html");
 
   return OrthancPluginErrorCode_Success;
@@ -297,6 +340,12 @@ extern "C"
     if (!ReadConfiguration(configuration, context_))
     {
       return -1;
+    }
+
+    if (configuration.isMember("ServeFoldersNoCache"))
+    {
+      OrthancPluginLogWarning(context_, "Disabling the cache");
+      allowCache_ = false;
     }
 
     if (configuration.isMember("ServeFolders"))

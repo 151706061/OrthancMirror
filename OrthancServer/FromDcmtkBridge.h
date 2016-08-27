@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -38,6 +38,8 @@
 
 #include <dcmtk/dcmdata/dcdatset.h>
 #include <dcmtk/dcmdata/dcmetinf.h>
+#include <dcmtk/dcmdata/dcpixseq.h>
+#include <dcmtk/dcmdata/dcfilefo.h>
 #include <json/json.h>
 
 namespace Orthanc
@@ -48,14 +50,18 @@ namespace Orthanc
     static void InitializeDictionary();
 
     static void RegisterDictionaryTag(const DicomTag& tag,
-                                      const DcmEVR& vr,
+                                      ValueRepresentation vr,
                                       const std::string& name,
                                       unsigned int minMultiplicity,
                                       unsigned int maxMultiplicity);
 
-    static Encoding DetectEncoding(DcmDataset& dataset);
+    static Encoding DetectEncoding(DcmItem& dataset,
+                                   Encoding defaultEncoding);
 
-    static void Convert(DicomMap& target, DcmDataset& dataset);
+    static void Convert(DicomMap& target, 
+                        DcmItem& dataset,
+                        unsigned int maxStringLength,
+                        Encoding defaultEncoding);
 
     static DicomTag Convert(const DcmTag& tag);
 
@@ -65,6 +71,7 @@ namespace Orthanc
 
     static DicomValue* ConvertLeafElement(DcmElement& element,
                                           DicomToJsonFlags flags,
+                                          unsigned int maxStringLength,
                                           Encoding encoding);
 
     static void ToJson(Json::Value& parent,
@@ -78,7 +85,8 @@ namespace Orthanc
                        DcmDataset& dataset,
                        DicomToJsonFormat format,
                        DicomToJsonFlags flags,
-                       unsigned int maxStringLength);
+                       unsigned int maxStringLength,
+                       Encoding defaultEncoding);
 
     static void ToJson(Json::Value& target, 
                        DcmMetaInfo& header,
@@ -123,7 +131,9 @@ namespace Orthanc
     static bool SaveToMemoryBuffer(std::string& buffer,
                                    DcmDataset& dataSet);
 
-    static ValueRepresentation GetValueRepresentation(const DicomTag& tag);
+    static ValueRepresentation Convert(DcmEVR vr);
+
+    static ValueRepresentation LookupValueRepresentation(const DicomTag& tag);
 
     static DcmElement* CreateElementForTag(const DicomTag& tag);
     
@@ -134,10 +144,24 @@ namespace Orthanc
                                       Encoding dicomEncoding);
 
     static DcmElement* FromJson(const DicomTag& tag,
-                                const Json::Value& element,  // Encoding using UTF-8
+                                const Json::Value& element,  // Encoded using UTF-8
                                 bool decodeDataUriScheme,
                                 Encoding dicomEncoding);
 
-    static DcmEVR ParseValueRepresentation(const std::string& s);
+    static DcmPixelSequence* GetPixelSequence(DcmDataset& dataset);
+
+    static Encoding ExtractEncoding(const Json::Value& json,
+                                    Encoding defaultEncoding);
+
+    static DcmDataset* FromJson(const Json::Value& json,  // Encoded using UTF-8
+                                bool generateIdentifiers,
+                                bool decodeDataUriScheme,
+                                Encoding defaultEncoding);
+
+    static DcmFileFormat* LoadFromMemoryBuffer(const void* buffer,
+                                               size_t size);
+
+    static void FromJson(DicomMap& values,
+                         const Json::Value& result);
   };
 }

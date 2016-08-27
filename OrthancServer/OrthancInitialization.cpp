@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -42,6 +42,7 @@
 #include "ServerEnumerations.h"
 #include "DatabaseWrapper.h"
 #include "FromDcmtkBridge.h"
+#include "ToDcmtkBridge.h"
 
 #include <boost/lexical_cast.hpp>
 #include <boost/filesystem.hpp>
@@ -69,6 +70,10 @@
 #endif
 
 
+#include <dcmtk/dcmnet/dul.h>
+
+
+
 namespace Orthanc
 {
   static boost::recursive_mutex globalMutex_;
@@ -76,6 +81,7 @@ namespace Orthanc
   static boost::filesystem::path defaultDirectory_;
   static std::string configurationAbsolutePath_;
   static FontRegistry fontRegistry_;
+  static const char* configurationFileArg_ = NULL;
 
 
   static std::string GetGlobalStringParameterInternal(const std::string& parameter,
@@ -123,7 +129,8 @@ namespace Orthanc
 
 
 
-  static void AddFileToConfiguration(const boost::filesystem::path& path)
+  static void AddFileToConfiguration(Json::Value& target,
+                                     const boost::filesystem::path& path)
   {
     LOG(WARNING) << "Reading the configuration from: " << path;
 
@@ -145,30 +152,31 @@ namespace Orthanc
       Toolbox::CopyJsonWithoutComments(config, tmp);
     }
 
-    if (configuration_.size() == 0)
+    if (target.size() == 0)
     {
-      configuration_ = config;
+      target = config;
     }
     else
     {
       Json::Value::Members members = config.getMemberNames();
       for (Json::Value::ArrayIndex i = 0; i < members.size(); i++)
       {
-        if (configuration_.isMember(members[i]))
+        if (target.isMember(members[i]))
         {
           LOG(ERROR) << "The configuration section \"" << members[i] << "\" is defined in 2 different configuration files";
           throw OrthancException(ErrorCode_BadFileFormat);          
         }
         else
         {
-          configuration_[members[i]] = config[members[i]];
+          target[members[i]] = config[members[i]];
         }
       }
     }
   }
 
 
-  static void ScanFolderForConfiguration(const char* folder)
+  static void ScanFolderForConfiguration(Json::Value& target,
+                                         const char* folder)
   {
     using namespace boost::filesystem;
 
@@ -186,19 +194,17 @@ namespace Orthanc
 
         if (extension == ".json")
         {
-          AddFileToConfiguration(it->path().string());
+          AddFileToConfiguration(target, it->path().string());
         }
       }
     }
   }
 
 
-  static void ReadGlobalConfiguration(const char* configurationFile)
+  static void ReadConfiguration(Json::Value& target,
+                                const char* configurationFile)
   {
-    // Prepare the default configuration
-    defaultDirectory_ = boost::filesystem::current_path();
-    configuration_ = Json::objectValue;
-    configurationAbsolutePath_ = "";
+    target = Json::objectValue;
 
     if (configurationFile)
     {
@@ -210,15 +216,11 @@ namespace Orthanc
       
       if (boost::filesystem::is_directory(configurationFile))
       {
-        defaultDirectory_ = boost::filesystem::path(configurationFile);
-        configurationAbsolutePath_ = boost::filesystem::absolute(configurationFile).parent_path().string();
-        ScanFolderForConfiguration(configurationFile);
+        ScanFolderForConfiguration(target, configurationFile);
       }
       else
       {
-        defaultDirectory_ = boost::filesystem::path(configurationFile).parent_path();
-        configurationAbsolutePath_ = boost::filesystem::absolute(configurationFile).string();
-        AddFileToConfiguration(configurationFile);
+        AddFileToConfiguration(target, configurationFile);
       }
     }
     else
@@ -235,9 +237,47 @@ namespace Orthanc
       boost::filesystem::path p = ORTHANC_PATH;
       p /= "Resources";
       p /= "Configuration.json";
-      configurationAbsolutePath_ = boost::filesystem::absolute(p).string();
 
-      AddFileToConfiguration(p);      
+      AddFileToConfiguration(target, p);
+#endif
+    }
+  }
+
+
+
+  static void ReadGlobalConfiguration(const char* configurationFile)
+  {
+    // Read the content of the configuration
+    configurationFileArg_ = configurationFile;
+    ReadConfiguration(configuration_, configurationFile);
+
+    // Adapt the paths to the configurations
+    defaultDirectory_ = boost::filesystem::current_path();
+    configurationAbsolutePath_ = "";
+
+    if (configurationFile)
+    {
+      if (boost::filesystem::is_directory(configurationFile))
+      {
+        defaultDirectory_ = boost::filesystem::path(configurationFile);
+        configurationAbsolutePath_ = boost::filesystem::absolute(configurationFile).parent_path().string();
+      }
+      else
+      {
+        defaultDirectory_ = boost::filesystem::path(configurationFile).parent_path();
+        configurationAbsolutePath_ = boost::filesystem::absolute(configurationFile).string();
+      }
+    }
+    else
+    {
+#if ORTHANC_STANDALONE != 1
+      // In a non-standalone build, we use the
+      // "Resources/Configuration.json" from the Orthanc source code
+
+      boost::filesystem::path p = ORTHANC_PATH;
+      p /= "Resources";
+      p /= "Configuration.json";
+      configurationAbsolutePath_ = boost::filesystem::absolute(p).string();
 #endif
     }
   }
@@ -250,7 +290,7 @@ namespace Orthanc
     Configuration::GetListOfOrthancPeers(ids);
     for (std::set<std::string>::const_iterator it = ids.begin(); it != ids.end(); ++it)
     {
-      OrthancPeerParameters peer;
+      WebServiceParameters peer;
       Configuration::GetOrthancPeer(peer, *it);
     }
 
@@ -374,13 +414,55 @@ namespace Orthanc
       }
 
       DicomTag tag(FromDcmtkBridge::ParseTag(tags[i]));
-      DcmEVR vr = FromDcmtkBridge::ParseValueRepresentation(content[0].asString());
+      ValueRepresentation vr = StringToValueRepresentation(content[0].asString(), true);
       std::string name = content[1].asString();
       unsigned int minMultiplicity = (content.size() >= 2) ? content[2].asUInt() : 1;
       unsigned int maxMultiplicity = (content.size() >= 3) ? content[3].asUInt() : 1;
 
       FromDcmtkBridge::RegisterDictionaryTag(tag, vr, name, minMultiplicity, maxMultiplicity);
     }
+  }
+
+
+  static void ConfigurePkcs11(const Json::Value& config)
+  {
+    if (config.type() != Json::objectValue ||
+        !config.isMember("Module") ||
+        config["Module"].type() != Json::stringValue)
+    {
+      LOG(ERROR) << "No path to the PKCS#11 module (DLL or .so) is provided for HTTPS client authentication";
+      throw OrthancException(ErrorCode_BadFileFormat);
+    }
+
+    std::string pin;
+    if (config.isMember("Pin"))
+    {
+      if (config["Pin"].type() == Json::stringValue)
+      {
+        pin = config["Pin"].asString();
+      }
+      else
+      {
+        LOG(ERROR) << "The PIN number in the PKCS#11 configuration must be a string";
+        throw OrthancException(ErrorCode_BadFileFormat);
+      }
+    }
+
+    bool verbose = false;
+    if (config.isMember("Verbose"))
+    {
+      if (config["Verbose"].type() == Json::booleanValue)
+      {
+        verbose = config["Verbose"].asBool();
+      }
+      else
+      {
+        LOG(ERROR) << "The Verbose option in the PKCS#11 configuration must be a Boolean";
+        throw OrthancException(ErrorCode_BadFileFormat);
+      }
+    }
+
+    HttpClient::InitializePkcs11(config["Module"].asString(), pin, verbose);
   }
 
 
@@ -395,10 +477,6 @@ namespace Orthanc
     SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
     ERR_load_crypto_strings();
-
-    curl_global_init(CURL_GLOBAL_ALL);
-#else
-    curl_global_init(CURL_GLOBAL_ALL & ~CURL_GLOBAL_SSL);
 #endif
 
     InitializeServerEnumerations();
@@ -407,8 +485,12 @@ namespace Orthanc
     ReadGlobalConfiguration(configurationFile);
     ValidateGlobalConfiguration();
 
-    HttpClient::GlobalInitialize(GetGlobalBoolParameterInternal("HttpsVerifyPeers", true),
-                                 GetGlobalStringParameterInternal("HttpsCACertificates", ""));
+    if (configuration_.isMember("Pkcs11"))
+    {
+      ConfigurePkcs11(configuration_["Pkcs11"]);
+    }
+
+    HttpClient::GlobalInitialize();
 
     RegisterUserMetadata();
     RegisterUserContentType();
@@ -427,6 +509,9 @@ namespace Orthanc
 #endif
 
     fontRegistry_.AddFromResource(EmbeddedResources::FONT_UBUNTU_MONO_BOLD_16);
+
+    /* Disable "gethostbyaddr" (which results in memory leaks) and use raw IP addresses */
+    dcmDisableGethostbyaddr.set(OFTrue);
   }
 
 
@@ -445,8 +530,6 @@ namespace Orthanc
     // Unregister JPEG codecs
     DJDecoderRegistration::cleanup();
 #endif
-
-    curl_global_cleanup();
 
 #if ORTHANC_SSL_ENABLED == 1
     // Finalize OpenSSL
@@ -494,6 +577,23 @@ namespace Orthanc
   }
 
 
+  unsigned int Configuration::GetGlobalUnsignedIntegerParameter(const std::string& parameter,
+                                                                unsigned int defaultValue)
+  {
+    int v = GetGlobalIntegerParameter(parameter, defaultValue);
+
+    if (v < 0)
+    {
+      LOG(ERROR) << "The configuration option \"" << parameter << "\" must be a positive integer";
+      throw OrthancException(ErrorCode_ParameterOutOfRange);
+    }
+    else
+    {
+      return static_cast<unsigned int>(v);
+    }
+  }
+
+
   bool Configuration::GetGlobalBoolParameter(const std::string& parameter,
                                              bool defaultValue)
   {
@@ -535,7 +635,7 @@ namespace Orthanc
 
 
 
-  void Configuration::GetOrthancPeer(OrthancPeerParameters& peer,
+  void Configuration::GetOrthancPeer(WebServiceParameters& peer,
                                      const std::string& name)
   {
     boost::recursive_mutex::scoped_lock lock(globalMutex_);
@@ -846,7 +946,7 @@ namespace Orthanc
 
 
   void Configuration::UpdatePeer(const std::string& symbolicName,
-                                 const OrthancPeerParameters& peer)
+                                 const WebServiceParameters& peer)
   {
     boost::recursive_mutex::scoped_lock lock(globalMutex_);
 
@@ -1023,5 +1123,30 @@ namespace Orthanc
   const FontRegistry& Configuration::GetFontRegistry()
   {
     return fontRegistry_;
+  }
+
+
+  Encoding Configuration::GetDefaultEncoding()
+  {
+    std::string s = GetGlobalStringParameter("DefaultEncoding", "Latin1");
+
+    // By default, Latin1 encoding is assumed
+    return s.empty() ? Encoding_Latin1 : StringToEncoding(s.c_str());
+  }
+
+
+  bool Configuration::HasConfigurationChanged()
+  {
+    Json::Value starting;
+    GetConfiguration(starting);
+
+    Json::Value current;
+    ReadConfiguration(current, configurationFileArg_);
+
+    Json::FastWriter writer;
+    std::string a = writer.write(starting);
+    std::string b = writer.write(current);
+
+    return a != b;
   }
 }

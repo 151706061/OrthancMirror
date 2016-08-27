@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -30,42 +30,38 @@
  **/
 
 
-
 #include "PrecompiledHeadersServer.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
-#include "Internals/DicomImageDecoder.h"
-
 #include "FromDcmtkBridge.h"
 #include "ToDcmtkBridge.h"
-#include "OrthancInitialization.h"
 #include "../Core/Logging.h"
 #include "../Core/Toolbox.h"
-#include "../Core/OrthancException.h"
-#include "../Core/Images/PngWriter.h"
 #include "../Core/Uuid.h"
-#include "../Core/DicomFormat/DicomIntegerPixelAccessor.h"
+#include "../Core/OrthancException.h"
 
 #include <list>
 #include <limits>
 
 #include <boost/lexical_cast.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
-#include <dcmtk/dcmdata/dcchrstr.h>
+#include <dcmtk/dcmdata/dcdeftag.h>
 #include <dcmtk/dcmdata/dcdicent.h>
 #include <dcmtk/dcmdata/dcdict.h>
 #include <dcmtk/dcmdata/dcfilefo.h>
-#include <dcmtk/dcmdata/dcistrmb.h>
+#include <dcmtk/dcmdata/dcostrmb.h>
+#include <dcmtk/dcmdata/dcpixel.h>
 #include <dcmtk/dcmdata/dcuid.h>
-#include <dcmtk/dcmdata/dcmetinf.h>
-#include <dcmtk/dcmdata/dcdeftag.h>
+#include <dcmtk/dcmdata/dcistrmb.h>
 
 #include <dcmtk/dcmdata/dcvrae.h>
 #include <dcmtk/dcmdata/dcvras.h>
+#include <dcmtk/dcmdata/dcvrat.h>
 #include <dcmtk/dcmdata/dcvrcs.h>
 #include <dcmtk/dcmdata/dcvrda.h>
 #include <dcmtk/dcmdata/dcvrds.h>
@@ -85,16 +81,11 @@
 #include <dcmtk/dcmdata/dcvrul.h>
 #include <dcmtk/dcmdata/dcvrus.h>
 #include <dcmtk/dcmdata/dcvrut.h>
-#include <dcmtk/dcmdata/dcpixel.h>
-#include <dcmtk/dcmdata/dcpixseq.h>
-#include <dcmtk/dcmdata/dcpxitem.h>
-#include <dcmtk/dcmdata/dcvrat.h>
 
-#include <dcmtk/dcmnet/dul.h>
 
-#include <boost/math/special_functions/round.hpp>
-#include <boost/algorithm/string/predicate.hpp>
-#include <dcmtk/dcmdata/dcostrmb.h>
+#if DCMTK_USE_EMBEDDED_DICTIONARIES == 1
+#include <EmbeddedResources.h>
+#endif
 
 
 namespace Orthanc
@@ -124,15 +115,16 @@ namespace Orthanc
   static void LoadEmbeddedDictionary(DcmDataDictionary& dictionary,
                                      EmbeddedResources::FileResourceId resource)
   {
-    Toolbox::TemporaryFile tmp;
+    std::string content;
+    EmbeddedResources::GetFileResource(content, resource);
 
-    FILE* fp = fopen(tmp.GetPath().c_str(), "wb");
-    fwrite(EmbeddedResources::GetFileResourceBuffer(resource), 
-           EmbeddedResources::GetFileResourceSize(resource), 1, fp);
-    fclose(fp);
+    Toolbox::TemporaryFile tmp;
+    tmp.Write(content);
 
     if (!dictionary.loadDictionary(tmp.GetPath().c_str()))
     {
+      LOG(ERROR) << "Cannot read embedded dictionary. Under Windows, make sure that " 
+                 << "your TEMP directory does not contain special characters.";
       throw OrthancException(ErrorCode_InternalError);
     }
   }
@@ -188,9 +180,6 @@ namespace Orthanc
 
   void FromDcmtkBridge::InitializeDictionary()
   {
-    /* Disable "gethostbyaddr" (which results in memory leaks) and use raw IP addresses */
-    dcmDisableGethostbyaddr.set(OFTrue);
-
     {
       DictionaryLocker locker;
 
@@ -208,7 +197,7 @@ namespace Orthanc
       LoadEmbeddedDictionary(*locker, EmbeddedResources::DICTIONARY_DICOM);
       LoadEmbeddedDictionary(*locker, EmbeddedResources::DICTIONARY_PRIVATE);
 
-#elif defined(__linux) || defined(__FreeBSD_kernel__)
+#elif defined(__linux__) || defined(__FreeBSD_kernel__)
       std::string path = DCMTK_DICTIONARY_DIR;
 
       const char* env = std::getenv(DCM_DICT_ENVIRONMENT_VARIABLE);
@@ -245,7 +234,7 @@ namespace Orthanc
 
 
   void FromDcmtkBridge::RegisterDictionaryTag(const DicomTag& tag,
-                                              const DcmEVR& vr,
+                                              ValueRepresentation vr,
                                               const std::string& name,
                                               unsigned int minMultiplicity,
                                               unsigned int maxMultiplicity)
@@ -266,13 +255,15 @@ namespace Orthanc
       throw OrthancException(ErrorCode_ParameterOutOfRange);
     }
     
-    LOG(INFO) << "Registering tag in dictionary: " << tag << " " << (DcmVR(vr).getValidVRName()) << " " 
+    DcmEVR evr = ToDcmtkBridge::Convert(vr);
+
+    LOG(INFO) << "Registering tag in dictionary: " << tag << " " << (DcmVR(evr).getValidVRName()) << " " 
               << name << " (multiplicity: " << minMultiplicity << "-" 
               << (arbitrary ? "n" : boost::lexical_cast<std::string>(maxMultiplicity)) << ")";
 
     std::auto_ptr<DcmDictEntry>  entry(new DcmDictEntry(tag.GetGroup(),
                                                         tag.GetElement(),
-                                                        vr, name.c_str(),
+                                                        evr, name.c_str(),
                                                         static_cast<int>(minMultiplicity),
                                                         static_cast<int>(maxMultiplicity),
                                                         NULL    /* version */,
@@ -289,11 +280,10 @@ namespace Orthanc
   }
 
 
-  Encoding FromDcmtkBridge::DetectEncoding(DcmDataset& dataset)
+  Encoding FromDcmtkBridge::DetectEncoding(DcmItem& dataset,
+                                           Encoding defaultEncoding)
   {
-    // By default, Latin1 encoding is assumed
-    std::string s = Configuration::GetGlobalStringParameter("DefaultEncoding", "Latin1");
-    Encoding encoding = s.empty() ? Encoding_Latin1 : StringToEncoding(s.c_str());
+    Encoding encoding = defaultEncoding;
 
     OFString tmp;
     if (dataset.findAndGetOFString(DCM_SpecificCharacterSet, tmp).good())
@@ -324,9 +314,12 @@ namespace Orthanc
   }
 
 
-  void FromDcmtkBridge::Convert(DicomMap& target, DcmDataset& dataset)
+  void FromDcmtkBridge::Convert(DicomMap& target, 
+                                DcmItem& dataset,
+                                unsigned int maxStringLength,
+                                Encoding defaultEncoding)
   {
-    Encoding encoding = DetectEncoding(dataset);
+    Encoding encoding = DetectEncoding(dataset, defaultEncoding);
 
     target.Clear();
     for (unsigned long i = 0; i < dataset.card(); i++)
@@ -336,7 +329,7 @@ namespace Orthanc
       {
         target.SetValue(element->getTag().getGTag(),
                         element->getTag().getETag(),
-                        ConvertLeafElement(*element, DicomToJsonFlags_Default, encoding));
+                        ConvertLeafElement(*element, DicomToJsonFlags_Default, maxStringLength, encoding));
       }
     }
   }
@@ -356,6 +349,7 @@ namespace Orthanc
 
   DicomValue* FromDcmtkBridge::ConvertLeafElement(DcmElement& element,
                                                   DicomToJsonFlags flags,
+                                                  unsigned int maxStringLength,
                                                   Encoding encoding)
   {
     if (!element.isLeaf())
@@ -377,7 +371,8 @@ namespace Orthanc
         std::string s(c);
         std::string utf8 = Toolbox::ConvertToUtf8(s, encoding);
 
-        if (utf8.size() > ORTHANC_MAXIMUM_TAG_LENGTH)
+        if (maxStringLength != 0 &&
+            utf8.size() > maxStringLength)
         {
           return new DicomValue;  // Create a NULL value
         }
@@ -723,7 +718,7 @@ namespace Orthanc
 
     if (element.isLeaf())
     {
-      std::auto_ptr<DicomValue> v(FromDcmtkBridge::ConvertLeafElement(element, flags, encoding));
+      std::auto_ptr<DicomValue> v(FromDcmtkBridge::ConvertLeafElement(element, flags, maxStringLength, encoding));
       LeafValueToJson(target, *v, format, flags, maxStringLength);
     }
     else
@@ -805,10 +800,11 @@ namespace Orthanc
                                DcmDataset& dataset,
                                DicomToJsonFormat format,
                                DicomToJsonFlags flags,
-                               unsigned int maxStringLength)
+                               unsigned int maxStringLength,
+                               Encoding defaultEncoding)
   {
     target = Json::objectValue;
-    DatasetToJson(target, dataset, format, flags, maxStringLength, DetectEncoding(dataset));
+    DatasetToJson(target, dataset, format, flags, maxStringLength, DetectEncoding(dataset, defaultEncoding));
   }
 
 
@@ -1077,28 +1073,115 @@ namespace Orthanc
   }
 
 
-  ValueRepresentation FromDcmtkBridge::GetValueRepresentation(const DicomTag& tag)
+  ValueRepresentation FromDcmtkBridge::LookupValueRepresentation(const DicomTag& tag)
   {
     DcmTag t(tag.GetGroup(), tag.GetElement());
-    switch (t.getEVR())
+    return Convert(t.getEVR());
+  }
+
+  ValueRepresentation FromDcmtkBridge::Convert(const DcmEVR vr)
+  {
+    switch (vr)
     {
-      case EVR_PN:
-        return ValueRepresentation_PatientName;
+      case EVR_AE:
+        return ValueRepresentation_ApplicationEntity;
+
+      case EVR_AS:
+        return ValueRepresentation_AgeString;
+
+      case EVR_AT:
+        return ValueRepresentation_AttributeTag;
+
+      case EVR_CS:
+        return ValueRepresentation_CodeString;
 
       case EVR_DA:
         return ValueRepresentation_Date;
 
+      case EVR_DS:
+        return ValueRepresentation_DecimalString;
+
       case EVR_DT:
         return ValueRepresentation_DateTime;
 
-      case EVR_TM:
-        return ValueRepresentation_Time;
+      case EVR_FL:
+        return ValueRepresentation_FloatingPointSingle;
+
+      case EVR_FD:
+        return ValueRepresentation_FloatingPointDouble;
+
+      case EVR_IS:
+        return ValueRepresentation_IntegerString;
+
+      case EVR_LO:
+        return ValueRepresentation_LongString;
+
+      case EVR_LT:
+        return ValueRepresentation_LongText;
+
+      case EVR_OB:
+        return ValueRepresentation_OtherByte;
+
+        // Not supported as of DCMTK 3.6.0
+        /*case EVR_OD:
+          return ValueRepresentation_OtherDouble;*/
+
+      case EVR_OF:
+        return ValueRepresentation_OtherFloat;
+
+        // Not supported as of DCMTK 3.6.0
+        /*case EVR_OL:
+          return ValueRepresentation_OtherLong;*/
+
+      case EVR_OW:
+        return ValueRepresentation_OtherWord;
+
+      case EVR_PN:
+        return ValueRepresentation_PersonName;
+
+      case EVR_SH:
+        return ValueRepresentation_ShortString;
+
+      case EVR_SL:
+        return ValueRepresentation_SignedLong;
 
       case EVR_SQ:
         return ValueRepresentation_Sequence;
 
+      case EVR_SS:
+        return ValueRepresentation_SignedShort;
+
+      case EVR_ST:
+        return ValueRepresentation_ShortText;
+
+      case EVR_TM:
+        return ValueRepresentation_Time;
+
+        // Not supported as of DCMTK 3.6.0
+        /*case EVR_UC:
+          return ValueRepresentation_UnlimitedCharacters;*/
+
+      case EVR_UI:
+        return ValueRepresentation_UniqueIdentifier;
+
+      case EVR_UL:
+        return ValueRepresentation_UnsignedLong;
+
+      case EVR_UN:
+        return ValueRepresentation_Unknown;
+
+        // Not supported as of DCMTK 3.6.0
+        /*case EVR_UR:
+          return ValueRepresentation_UniversalResource;*/
+
+      case EVR_US:
+        return ValueRepresentation_UnsignedShort;
+
+      case EVR_UT:
+        return ValueRepresentation_UnlimitedText;
+
       default:
-        return ValueRepresentation_Other;
+        return ValueRepresentation_NotSupported;
     }
   }
 
@@ -1272,7 +1355,11 @@ namespace Orthanc
         boost::starts_with(utf8Value, "data:application/octet-stream;base64,"))
     {
       std::string mime;
-      Toolbox::DecodeDataUriScheme(mime, binary, utf8Value);
+      if (!Toolbox::DecodeDataUriScheme(mime, binary, utf8Value))
+      {
+        throw OrthancException(ErrorCode_BadFileFormat);
+      }
+
       decoded = &binary;
     }
     else if (dicomEncoding != Encoding_Utf8)
@@ -1481,89 +1568,201 @@ namespace Orthanc
   }
 
 
-  DcmEVR FromDcmtkBridge::ParseValueRepresentation(const std::string& s)
+  DcmPixelSequence* FromDcmtkBridge::GetPixelSequence(DcmDataset& dataset)
   {
-    if (s == "AE")
-      return EVR_AE;
+    DcmElement *element = NULL;
+    if (!dataset.findAndGetElement(DCM_PixelData, element).good())
+    {
+      throw OrthancException(ErrorCode_BadFileFormat);
+    }
 
-    if (s == "AS")
-      return EVR_AS;
+    DcmPixelData& pixelData = dynamic_cast<DcmPixelData&>(*element);
+    DcmPixelSequence* pixelSequence = NULL;
+    if (!pixelData.getEncapsulatedRepresentation
+        (dataset.getOriginalXfer(), NULL, pixelSequence).good())
+    {
+      return NULL;
+    }
+    else
+    {
+      return pixelSequence;
+    }
+  }
 
-    if (s == "AT")
-      return EVR_AT;
 
-    if (s == "CS")
-      return EVR_CS;
+  Encoding FromDcmtkBridge::ExtractEncoding(const Json::Value& json,
+                                            Encoding defaultEncoding)
+  {
+    if (json.type() != Json::objectValue)
+    {
+      throw OrthancException(ErrorCode_BadParameterType);
+    }
 
-    if (s == "DA")
-      return EVR_DA;
+    Encoding encoding = defaultEncoding;
 
-    if (s == "DS")
-      return EVR_DS;
+    const Json::Value::Members tags = json.getMemberNames();
+    
+    // Look for SpecificCharacterSet (0008,0005) in the JSON file
+    for (size_t i = 0; i < tags.size(); i++)
+    {
+      DicomTag tag = FromDcmtkBridge::ParseTag(tags[i]);
+      if (tag == DICOM_TAG_SPECIFIC_CHARACTER_SET)
+      {
+        const Json::Value& value = json[tags[i]];
+        if (value.type() != Json::stringValue ||
+            !GetDicomEncoding(encoding, value.asCString()))
+        {
+          LOG(ERROR) << "Unknown encoding while creating DICOM from JSON: " << value;
+          throw OrthancException(ErrorCode_BadRequest);
+        }
+      }
+    }
 
-    if (s == "DT")
-      return EVR_DT;
+    return encoding;
+  } 
 
-    if (s == "FD")
-      return EVR_FD;
 
-    if (s == "FL")
-      return EVR_FL;
+  static void SetString(DcmDataset& target,
+                        const DcmTag& tag,
+                        const std::string& value)
+  {
+    if (!target.putAndInsertString(tag, value.c_str()).good())
+    {
+      throw OrthancException(ErrorCode_InternalError);
+    }
+  }
 
-    if (s == "IS")
-      return EVR_IS;
 
-    if (s == "LO")
-      return EVR_LO;
+  DcmDataset* FromDcmtkBridge::FromJson(const Json::Value& json,  // Encoded using UTF-8
+                                        bool generateIdentifiers,
+                                        bool decodeDataUriScheme,
+                                        Encoding defaultEncoding)
+  {
+    std::auto_ptr<DcmDataset> result(new DcmDataset);
+    Encoding encoding = ExtractEncoding(json, defaultEncoding);
 
-    if (s == "LT")
-      return EVR_LT;
+    SetString(*result, DCM_SpecificCharacterSet, GetDicomSpecificCharacterSet(encoding));
 
-    if (s == "OB")
-      return EVR_OB;
+    const Json::Value::Members tags = json.getMemberNames();
+    
+    bool hasPatientId = false;
+    bool hasStudyInstanceUid = false;
+    bool hasSeriesInstanceUid = false;
+    bool hasSopInstanceUid = false;
 
-    if (s == "OF")
-      return EVR_OF;
+    for (size_t i = 0; i < tags.size(); i++)
+    {
+      DicomTag tag = FromDcmtkBridge::ParseTag(tags[i]);
+      const Json::Value& value = json[tags[i]];
 
-    if (s == "OW")
-      return EVR_OW;
+      if (tag == DICOM_TAG_PATIENT_ID)
+      {
+        hasPatientId = true;
+      }
+      else if (tag == DICOM_TAG_STUDY_INSTANCE_UID)
+      {
+        hasStudyInstanceUid = true;
+      }
+      else if (tag == DICOM_TAG_SERIES_INSTANCE_UID)
+      {
+        hasSeriesInstanceUid = true;
+      }
+      else if (tag == DICOM_TAG_SOP_INSTANCE_UID)
+      {
+        hasSopInstanceUid = true;
+      }
 
-    if (s == "PN")
-      return EVR_PN;
+      if (tag != DICOM_TAG_SPECIFIC_CHARACTER_SET)
+      {
+        std::auto_ptr<DcmElement> element(FromDcmtkBridge::FromJson(tag, value, decodeDataUriScheme, encoding));
+        const DcmTagKey& tag = element->getTag();
 
-    if (s == "SH")
-      return EVR_SH;
+        result->findAndDeleteElement(tag);
 
-    if (s == "SL")
-      return EVR_SL;
+        DcmElement* tmp = element.release();
+        if (!result->insert(tmp, false, false).good())
+        {
+          delete tmp;
+          throw OrthancException(ErrorCode_InternalError);
+        }
+      }
+    }
 
-    if (s == "SQ")
-      return EVR_SQ;
+    if (!hasPatientId &&
+        generateIdentifiers)
+    {
+      SetString(*result, DCM_PatientID, GenerateUniqueIdentifier(ResourceType_Patient));
+    }
 
-    if (s == "SS")
-      return EVR_SS;
+    if (!hasStudyInstanceUid &&
+        generateIdentifiers)
+    {
+      SetString(*result, DCM_StudyInstanceUID, GenerateUniqueIdentifier(ResourceType_Study));
+    }
 
-    if (s == "ST")
-      return EVR_ST;
+    if (!hasSeriesInstanceUid &&
+        generateIdentifiers)
+    {
+      SetString(*result, DCM_SeriesInstanceUID, GenerateUniqueIdentifier(ResourceType_Series));
+    }
 
-    if (s == "TM")
-      return EVR_TM;
+    if (!hasSopInstanceUid &&
+        generateIdentifiers)
+    {
+      SetString(*result, DCM_SOPInstanceUID, GenerateUniqueIdentifier(ResourceType_Instance));
+    }
 
-    if (s == "UI")
-      return EVR_UI;
+    return result.release();
+  }
 
-    if (s == "UL")
-      return EVR_UL;
 
-    if (s == "UN")
-      return EVR_UN;
+  DcmFileFormat* FromDcmtkBridge::LoadFromMemoryBuffer(const void* buffer,
+                                                       size_t size)
+  {
+    DcmInputBufferStream is;
+    if (size > 0)
+    {
+      is.setBuffer(buffer, size);
+    }
+    is.setEos();
 
-    if (s == "US")
-      return EVR_US;
+    std::auto_ptr<DcmFileFormat> result(new DcmFileFormat);
 
-    if (s == "UT")
-      return EVR_UT;
+    result->transferInit();
+    if (!result->read(is).good())
+    {
+      throw OrthancException(ErrorCode_BadFileFormat);
+    }
 
-    throw OrthancException(ErrorCode_ParameterOutOfRange);
+    result->loadAllDataIntoMemory();
+    result->transferEnd();
+
+    return result.release();
+  }
+
+
+  void FromDcmtkBridge::FromJson(DicomMap& target,
+                                 const Json::Value& source)
+  {
+    if (source.type() != Json::objectValue)
+    {
+      throw OrthancException(ErrorCode_BadFileFormat);
+    }
+
+    target.Clear();
+
+    Json::Value::Members members = source.getMemberNames();
+
+    for (size_t i = 0; i < members.size(); i++)
+    {
+      const Json::Value& value = source[members[i]];
+
+      if (value.type() != Json::stringValue)
+      {
+        throw OrthancException(ErrorCode_BadFileFormat);
+      }
+      
+      target.SetValue(ParseTag(members[i]), value.asString(), false);
+    }
   }
 }

@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -61,7 +61,7 @@ namespace Orthanc
       return numBytes_;
     }
 
-    void AddChunk(const char* chunkData,
+    void AddChunk(const void* chunkData,
                   size_t chunkSize);
 
     void AddChunk(const std::string& chunk);

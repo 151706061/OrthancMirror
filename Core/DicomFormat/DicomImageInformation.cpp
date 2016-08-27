@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -157,7 +157,7 @@ namespace Orthanc
       if (samplesPerPixel_ > 1)
       {
         // The "Planar Configuration" is only set when "Samples per Pixels" is greater than 1
-        // https://www.dabsoft.ch/dicom/3/C.7.6.3.1.3/
+        // http://dicom.nema.org/medical/dicom/current/output/html/part03.html#sect_C.7.6.3.1.3
         try
         {
           planarConfiguration = boost::lexical_cast<unsigned int>(values.GetValue(DICOM_TAG_PLANAR_CONFIGURATION).GetContent());
@@ -218,9 +218,16 @@ namespace Orthanc
   }
 
 
-  bool DicomImageInformation::ExtractPixelFormat(PixelFormat& format) const
+  bool DicomImageInformation::ExtractPixelFormat(PixelFormat& format,
+                                                 bool ignorePhotometricInterpretation) const
   {
-    if (photometric_ == PhotometricInterpretation_Monochrome1 ||
+    if (photometric_ == PhotometricInterpretation_Palette)
+    {
+      return false;
+    }
+
+    if (ignorePhotometricInterpretation ||
+        photometric_ == PhotometricInterpretation_Monochrome1 ||
         photometric_ == PhotometricInterpretation_Monochrome2)
     {
       if (GetBitsStored() == 8 && GetChannelCount() == 1 && !IsSigned())
@@ -245,12 +252,21 @@ namespace Orthanc
     if (GetBitsStored() == 8 && 
         GetChannelCount() == 3 && 
         !IsSigned() &&
-        photometric_ == PhotometricInterpretation_RGB)
+        (ignorePhotometricInterpretation || photometric_ == PhotometricInterpretation_RGB))
     {
       format = PixelFormat_RGB24;
       return true;
     }
 
     return false;
+  }
+
+
+  size_t DicomImageInformation::GetFrameSize() const
+  {
+    return (GetHeight() * 
+            GetWidth() * 
+            GetBytesPerValue() * 
+            GetChannelCount());
   }
 }

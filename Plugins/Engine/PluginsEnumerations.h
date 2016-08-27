@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -37,10 +37,6 @@
 #include "../Include/orthanc/OrthancCPlugin.h"
 #include "../../OrthancServer/ServerEnumerations.h"
 
-#if !defined(ORTHANC_ENABLE_DCMTK) || ORTHANC_ENABLE_DCMTK != 0
-#include <dcmtk/dcmdata/dcvr.h>
-#endif
-
 namespace Orthanc
 {
   namespace Plugins
@@ -67,11 +63,11 @@ namespace Orthanc
 
     OrthancPluginInstanceOrigin Convert(RequestOrigin origin);
 
-#if !defined(ORTHANC_ENABLE_DCMTK) || ORTHANC_ENABLE_DCMTK != 0
-    DcmEVR Convert(OrthancPluginValueRepresentation vr);
+    OrthancPluginHttpMethod Convert(HttpMethod method);
 
-    OrthancPluginValueRepresentation Convert(DcmEVR vr);
-#endif
+    ValueRepresentation Convert(OrthancPluginValueRepresentation vr);
+
+    OrthancPluginValueRepresentation Convert(ValueRepresentation vr);
   }
 }
 

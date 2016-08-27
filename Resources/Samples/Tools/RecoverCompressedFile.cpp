@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -47,7 +47,9 @@ int main(int argc, const char* argv[])
 
     Orthanc::ZlibCompressor compressor;
     std::string uncompressed;
-    compressor.Uncompress(uncompressed, content);
+    compressor.Uncompress(uncompressed, 
+                          content.empty() ? NULL : content.c_str(), 
+                          content.size());
 
     fprintf(stderr, "Writing the uncompressed data...\n");
     fflush(stderr);

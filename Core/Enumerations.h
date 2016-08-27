@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -31,6 +31,8 @@
 
 
 #pragma once
+
+#include <string>
 
 namespace Orthanc
 {
@@ -100,8 +102,8 @@ namespace Orthanc
     ErrorCode_DirectoryOverFile = 2000    /*!< The directory to be created is already occupied by a regular file */,
     ErrorCode_FileStorageCannotWrite = 2001    /*!< Unable to create a subdirectory or a file in the file storage */,
     ErrorCode_DirectoryExpected = 2002    /*!< The specified path does not point to a directory */,
-    ErrorCode_HttpPortInUse = 2003    /*!< The TCP port of the HTTP server is already in use */,
-    ErrorCode_DicomPortInUse = 2004    /*!< The TCP port of the DICOM server is already in use */,
+    ErrorCode_HttpPortInUse = 2003    /*!< The TCP port of the HTTP server is privileged or already in use */,
+    ErrorCode_DicomPortInUse = 2004    /*!< The TCP port of the DICOM server is privileged or already in use */,
     ErrorCode_BadHttpStatusInRest = 2005    /*!< This HTTP status is not allowed in a REST API */,
     ErrorCode_RegularFileExpected = 2006    /*!< The specified path does not point to a regular file */,
     ErrorCode_PathToExecutable = 2007    /*!< Unable to get the path to the executable */,
@@ -139,6 +141,7 @@ namespace Orthanc
     ErrorCode_SslDisabled = 2039    /*!< Orthanc has been built without SSL support */,
     ErrorCode_CannotOrderSlices = 2040    /*!< Unable to order the slices of the series */,
     ErrorCode_NoWorklistHandler = 2041    /*!< No request handler factory for DICOM C-Find Modality SCP */,
+    ErrorCode_AlreadyExistingTag = 2042    /*!< Cannot override the value of a tag that already exists */,
     ErrorCode_START_PLUGINS = 1000000
   };
 
@@ -186,7 +189,13 @@ namespace Orthanc
      * {summary}{Graylevel, signed 16bpp image.}
      * {description}{The image is graylevel. Each pixel is signed and stored in two bytes.}
      **/
-    PixelFormat_SignedGrayscale16 = 5
+    PixelFormat_SignedGrayscale16 = 5,
+      
+    /**
+     * {summary}{Graylevel, floating-point image.}
+     * {description}{The image is graylevel. Each pixel is floating-point and stored in 4 bytes.}
+     **/
+    PixelFormat_Float32 = 6
   };
 
 
@@ -314,7 +323,8 @@ namespace Orthanc
   };
 
 
-  // http://www.dabsoft.ch/dicom/3/C.12.1.1.2/
+  // Specific Character Sets
+  // http://dicom.nema.org/medical/dicom/current/output/html/part03.html#sect_C.12.1.1.2
   enum Encoding
   {
     Encoding_Ascii,
@@ -338,7 +348,7 @@ namespace Orthanc
   };
 
 
-  // https://www.dabsoft.ch/dicom/3/C.7.6.3.1.2/
+  // http://dicom.nema.org/medical/dicom/current/output/html/part03.html#sect_C.7.6.3.1.2
   enum PhotometricInterpretation
   {
     PhotometricInterpretation_ARGB,  // Retired
@@ -373,6 +383,59 @@ namespace Orthanc
     RequestOrigin_RestApi,
     RequestOrigin_Plugins,
     RequestOrigin_Lua
+  };
+
+  enum ServerBarrierEvent
+  {
+    ServerBarrierEvent_Stop,
+    ServerBarrierEvent_Reload  // SIGHUP signal: reload configuration file
+  };
+
+  enum FileMode
+  {
+    FileMode_ReadBinary,
+    FileMode_WriteBinary
+  };
+
+  /**
+   * The value representations Orthanc knows about. They correspond to
+   * the DICOM 2016b version of the standard.
+   * http://dicom.nema.org/medical/dicom/current/output/chtml/part05/sect_6.2.html
+   **/
+  enum ValueRepresentation
+  {
+    ValueRepresentation_ApplicationEntity = 1,     // AE
+    ValueRepresentation_AgeString = 2,             // AS
+    ValueRepresentation_AttributeTag = 3,          // AT (2 x uint16_t)
+    ValueRepresentation_CodeString = 4,            // CS
+    ValueRepresentation_Date = 5,                  // DA
+    ValueRepresentation_DecimalString = 6,         // DS
+    ValueRepresentation_DateTime = 7,              // DT
+    ValueRepresentation_FloatingPointSingle = 8,   // FL (float)
+    ValueRepresentation_FloatingPointDouble = 9,   // FD (double)
+    ValueRepresentation_IntegerString = 10,        // IS
+    ValueRepresentation_LongString = 11,           // LO
+    ValueRepresentation_LongText = 12,             // LT
+    ValueRepresentation_OtherByte = 13,            // OB
+    ValueRepresentation_OtherDouble = 14,          // OD
+    ValueRepresentation_OtherFloat = 15,           // OF
+    ValueRepresentation_OtherLong = 16,            // OL
+    ValueRepresentation_OtherWord = 17,            // OW
+    ValueRepresentation_PersonName = 18,           // PN
+    ValueRepresentation_ShortString = 19,          // SH
+    ValueRepresentation_SignedLong = 20,           // SL (int32_t)
+    ValueRepresentation_Sequence = 21,             // SQ
+    ValueRepresentation_SignedShort = 22,          // SS (int16_t)
+    ValueRepresentation_ShortText = 23,            // ST
+    ValueRepresentation_Time = 24,                 // TM
+    ValueRepresentation_UnlimitedCharacters = 25,  // UC
+    ValueRepresentation_UniqueIdentifier = 26,     // UI (UID)
+    ValueRepresentation_UnsignedLong = 27,         // UL (uint32_t)
+    ValueRepresentation_Unknown = 28,              // UN
+    ValueRepresentation_UniversalResource = 29,    // UR (URI or URL)
+    ValueRepresentation_UnsignedShort = 30,        // US (uint16_t)
+    ValueRepresentation_UnlimitedText = 31,        // UT
+    ValueRepresentation_NotSupported               // Not supported by Orthanc, or tag not in dictionary
   };
 
 
@@ -443,13 +506,18 @@ namespace Orthanc
 
   const char* EnumerationToString(RequestOrigin origin);
 
+  const char* EnumerationToString(PixelFormat format);
+
   Encoding StringToEncoding(const char* encoding);
 
   ResourceType StringToResourceType(const char* type);
 
   ImageFormat StringToImageFormat(const char* format);
 
-  LogLevel StringToLogLevel(const char* format);
+  LogLevel StringToLogLevel(const char* level);
+
+  ValueRepresentation StringToValueRepresentation(const std::string& vr,
+                                                  bool throwIfUnsupported);
 
   unsigned int GetBytesPerPixel(PixelFormat format);
 
@@ -467,4 +535,6 @@ namespace Orthanc
   HttpStatus ConvertErrorCodeToHttpStatus(ErrorCode error);
 
   bool IsUserContentType(FileContentType type);
+
+  bool IsBinaryValueRepresentation(ValueRepresentation vr);
 }

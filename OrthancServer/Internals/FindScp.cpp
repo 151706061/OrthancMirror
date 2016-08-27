@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -86,6 +86,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../ToDcmtkBridge.h"
 #include "../../Core/Logging.h"
 #include "../../Core/OrthancException.h"
+#include "../OrthancInitialization.h"
 
 #include <dcmtk/dcmdata/dcfilefo.h>
 
@@ -102,6 +103,10 @@ namespace Orthanc
       const std::string* remoteIp_;
       const std::string* remoteAet_;
       const std::string* calledAet_;
+
+      FindScpData() : answers_(false)
+      {
+      }
     };
 
 
@@ -131,6 +136,8 @@ namespace Orthanc
         {
           if (sopClassUid == UID_FINDModalityWorklistInformationModel)
           {
+            data.answers_.SetWorklist(true);
+
             if (data.worklistHandler_ != NULL)
             {
               ParsedDicomFile query(*requestIdentifiers);
@@ -146,6 +153,8 @@ namespace Orthanc
           }
           else
           {
+            data.answers_.SetWorklist(false);
+
             if (data.findHandler_ != NULL)
             {
               std::list<DicomTag> sequencesToReturn;
@@ -170,7 +179,8 @@ namespace Orthanc
               }
 
               DicomMap input;
-              FromDcmtkBridge::Convert(input, *requestIdentifiers);
+              FromDcmtkBridge::Convert(input, *requestIdentifiers, ORTHANC_MAXIMUM_TAG_LENGTH,
+                                       Configuration::GetDefaultEncoding());
               data.findHandler_->Handle(data.answers_, input, sequencesToReturn,
                                         *data.remoteIp_, *data.remoteAet_,
                                         *data.calledAet_);

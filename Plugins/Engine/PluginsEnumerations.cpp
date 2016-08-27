@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -304,91 +304,21 @@ namespace Orthanc
     }
 
 
-#if !defined(ORTHANC_ENABLE_DCMTK) || ORTHANC_ENABLE_DCMTK != 0
-    DcmEVR Convert(OrthancPluginValueRepresentation vr)
+    OrthancPluginHttpMethod Convert(HttpMethod method)
     {
-      switch (vr)
+      switch (method)
       {
-        case OrthancPluginValueRepresentation_AE:
-          return EVR_AE;
+        case HttpMethod_Get:
+          return OrthancPluginHttpMethod_Get;
 
-        case OrthancPluginValueRepresentation_AS:
-          return EVR_AS;
+        case HttpMethod_Post:
+          return OrthancPluginHttpMethod_Post;
 
-        case OrthancPluginValueRepresentation_AT:
-          return EVR_AT;
+        case HttpMethod_Put:
+          return OrthancPluginHttpMethod_Put;
 
-        case OrthancPluginValueRepresentation_CS:
-          return EVR_CS;
-
-        case OrthancPluginValueRepresentation_DA:
-          return EVR_DA;
-
-        case OrthancPluginValueRepresentation_DS:
-          return EVR_DS;
-
-        case OrthancPluginValueRepresentation_DT:
-          return EVR_DT;
-
-        case OrthancPluginValueRepresentation_FD:
-          return EVR_FD;
-
-        case OrthancPluginValueRepresentation_FL:
-          return EVR_FL;
-
-        case OrthancPluginValueRepresentation_IS:
-          return EVR_IS;
-
-        case OrthancPluginValueRepresentation_LO:
-          return EVR_LO;
-
-        case OrthancPluginValueRepresentation_LT:
-          return EVR_LT;
-
-        case OrthancPluginValueRepresentation_OB:
-          return EVR_OB;
-
-        case OrthancPluginValueRepresentation_OF:
-          return EVR_OF;
-
-        case OrthancPluginValueRepresentation_OW:
-          return EVR_OW;
-
-        case OrthancPluginValueRepresentation_PN:
-          return EVR_PN;
-
-        case OrthancPluginValueRepresentation_SH:
-          return EVR_SH;
-
-        case OrthancPluginValueRepresentation_SL:
-          return EVR_SL;
-
-        case OrthancPluginValueRepresentation_SQ:
-          return EVR_SQ;
-
-        case OrthancPluginValueRepresentation_SS:
-          return EVR_SS;
-
-        case OrthancPluginValueRepresentation_ST:
-          return EVR_ST;
-
-        case OrthancPluginValueRepresentation_TM:
-          return EVR_TM;
-
-        case OrthancPluginValueRepresentation_UI:
-          return EVR_UI;
-
-        case OrthancPluginValueRepresentation_UL:
-          return EVR_UL;
-
-        case OrthancPluginValueRepresentation_UN:
-          return EVR_UN;
-
-        case OrthancPluginValueRepresentation_US:
-          return EVR_US;
-
-        case OrthancPluginValueRepresentation_UT:
-          return EVR_UT;
+        case HttpMethod_Delete:
+          return OrthancPluginHttpMethod_Delete;
 
         default:
           throw OrthancException(ErrorCode_ParameterOutOfRange);
@@ -396,93 +326,201 @@ namespace Orthanc
     }
 
 
-    OrthancPluginValueRepresentation Convert(DcmEVR vr)
+    ValueRepresentation Convert(OrthancPluginValueRepresentation vr)
     {
       switch (vr)
       {
-        case EVR_AE:
-          return OrthancPluginValueRepresentation_AE;
+        case OrthancPluginValueRepresentation_AE:
+          return ValueRepresentation_ApplicationEntity;
 
-        case EVR_AS:
-          return OrthancPluginValueRepresentation_AS;
+        case OrthancPluginValueRepresentation_AS:
+          return ValueRepresentation_AgeString;
 
-        case EVR_AT:
-          return OrthancPluginValueRepresentation_AT;
+        case OrthancPluginValueRepresentation_AT:
+          return ValueRepresentation_AttributeTag;
 
-        case EVR_CS:
-          return OrthancPluginValueRepresentation_CS;
+        case OrthancPluginValueRepresentation_CS:
+          return ValueRepresentation_CodeString;
 
-        case EVR_DA:
-          return OrthancPluginValueRepresentation_DA;
+        case OrthancPluginValueRepresentation_DA:
+          return ValueRepresentation_Date;
 
-        case EVR_DS:
-          return OrthancPluginValueRepresentation_DS;
+        case OrthancPluginValueRepresentation_DS:
+          return ValueRepresentation_DecimalString;
 
-        case EVR_DT:
-          return OrthancPluginValueRepresentation_DT;
+        case OrthancPluginValueRepresentation_DT:
+          return ValueRepresentation_DateTime;
 
-        case EVR_FD:
-          return OrthancPluginValueRepresentation_FD;
+        case OrthancPluginValueRepresentation_FD:
+          return ValueRepresentation_FloatingPointDouble;
 
-        case EVR_FL:
-          return OrthancPluginValueRepresentation_FL;
+        case OrthancPluginValueRepresentation_FL:
+          return ValueRepresentation_FloatingPointSingle;
 
-        case EVR_IS:
-          return OrthancPluginValueRepresentation_IS;
+        case OrthancPluginValueRepresentation_IS:
+          return ValueRepresentation_IntegerString;
 
-        case EVR_LO:
-          return OrthancPluginValueRepresentation_LO;
+        case OrthancPluginValueRepresentation_LO:
+          return ValueRepresentation_LongString;
 
-        case EVR_LT:
-          return OrthancPluginValueRepresentation_LT;
+        case OrthancPluginValueRepresentation_LT:
+          return ValueRepresentation_LongText;
 
-        case EVR_OB:
-          return OrthancPluginValueRepresentation_OB;
+        case OrthancPluginValueRepresentation_OB:
+          return ValueRepresentation_OtherByte;
 
-        case EVR_OF:
-          return OrthancPluginValueRepresentation_OF;
+        case OrthancPluginValueRepresentation_OF:
+          return ValueRepresentation_OtherFloat;
 
-        case EVR_OW:
-          return OrthancPluginValueRepresentation_OW;
+        case OrthancPluginValueRepresentation_OW:
+          return ValueRepresentation_OtherWord;
 
-        case EVR_PN:
-          return OrthancPluginValueRepresentation_PN;
+        case OrthancPluginValueRepresentation_PN:
+          return ValueRepresentation_PersonName;
 
-        case EVR_SH:
-          return OrthancPluginValueRepresentation_SH;
+        case OrthancPluginValueRepresentation_SH:
+          return ValueRepresentation_ShortString;
 
-        case EVR_SL:
-          return OrthancPluginValueRepresentation_SL;
+        case OrthancPluginValueRepresentation_SL:
+          return ValueRepresentation_SignedLong;
 
-        case EVR_SQ:
-          return OrthancPluginValueRepresentation_SQ;
+        case OrthancPluginValueRepresentation_SQ:
+          return ValueRepresentation_Sequence;
 
-        case EVR_SS:
-          return OrthancPluginValueRepresentation_SS;
+        case OrthancPluginValueRepresentation_SS:
+          return ValueRepresentation_SignedShort;
 
-        case EVR_ST:
-          return OrthancPluginValueRepresentation_ST;
+        case OrthancPluginValueRepresentation_ST:
+          return ValueRepresentation_ShortText;
 
-        case EVR_TM:
-          return OrthancPluginValueRepresentation_TM;
+        case OrthancPluginValueRepresentation_TM:
+          return ValueRepresentation_Time;
 
-        case EVR_UI:
-          return OrthancPluginValueRepresentation_UI;
+        case OrthancPluginValueRepresentation_UI:
+          return ValueRepresentation_UniqueIdentifier;
 
-        case EVR_UL:
-          return OrthancPluginValueRepresentation_UL;
+        case OrthancPluginValueRepresentation_UL:
+          return ValueRepresentation_UnsignedLong;
 
-        case EVR_US:
-          return OrthancPluginValueRepresentation_US;
+        case OrthancPluginValueRepresentation_UN:
+          return ValueRepresentation_Unknown;
 
-        case EVR_UT:
-          return OrthancPluginValueRepresentation_UT;
+        case OrthancPluginValueRepresentation_US:
+          return ValueRepresentation_UnsignedShort;
 
-        case EVR_UN:
+        case OrthancPluginValueRepresentation_UT:
+          return ValueRepresentation_UnlimitedText;
+
         default:
-          return OrthancPluginValueRepresentation_UN;  // Unknown
+          throw OrthancException(ErrorCode_ParameterOutOfRange);
+
+          /*
+          Not supported as of DCMTK 3.6.0:
+          return ValueRepresentation_OtherDouble
+          return ValueRepresentation_OtherLong
+          return ValueRepresentation_UniversalResource
+          return ValueRepresentation_UnlimitedCharacters
+          */
       }
     }
-#endif
+
+
+    OrthancPluginValueRepresentation Convert(ValueRepresentation vr)
+    {
+      switch (vr)
+      {
+        case ValueRepresentation_ApplicationEntity:
+          return OrthancPluginValueRepresentation_AE;
+
+        case ValueRepresentation_AgeString:
+          return OrthancPluginValueRepresentation_AS;
+
+        case ValueRepresentation_AttributeTag:
+          return OrthancPluginValueRepresentation_AT;
+
+        case ValueRepresentation_CodeString:
+          return OrthancPluginValueRepresentation_CS;
+
+        case ValueRepresentation_Date:
+          return OrthancPluginValueRepresentation_DA;
+
+        case ValueRepresentation_DecimalString:
+          return OrthancPluginValueRepresentation_DS;
+
+        case ValueRepresentation_DateTime:
+          return OrthancPluginValueRepresentation_DT;
+
+        case ValueRepresentation_FloatingPointDouble:
+          return OrthancPluginValueRepresentation_FD;
+
+        case ValueRepresentation_FloatingPointSingle:
+          return OrthancPluginValueRepresentation_FL;
+
+        case ValueRepresentation_IntegerString:
+          return OrthancPluginValueRepresentation_IS;
+
+        case ValueRepresentation_LongString:
+          return OrthancPluginValueRepresentation_LO;
+
+        case ValueRepresentation_LongText:
+          return OrthancPluginValueRepresentation_LT;
+
+        case ValueRepresentation_OtherByte:
+          return OrthancPluginValueRepresentation_OB;
+
+        case ValueRepresentation_OtherFloat:
+          return OrthancPluginValueRepresentation_OF;
+
+        case ValueRepresentation_OtherWord:
+          return OrthancPluginValueRepresentation_OW;
+
+        case ValueRepresentation_PersonName:
+          return OrthancPluginValueRepresentation_PN;
+
+        case ValueRepresentation_ShortString:
+          return OrthancPluginValueRepresentation_SH;
+
+        case ValueRepresentation_SignedLong:
+          return OrthancPluginValueRepresentation_SL;
+
+        case ValueRepresentation_Sequence:
+          return OrthancPluginValueRepresentation_SQ;
+
+        case ValueRepresentation_SignedShort:
+          return OrthancPluginValueRepresentation_SS;
+
+        case ValueRepresentation_ShortText:
+          return OrthancPluginValueRepresentation_ST;
+
+        case ValueRepresentation_Time:
+          return OrthancPluginValueRepresentation_TM;
+
+        case ValueRepresentation_UniqueIdentifier:
+          return OrthancPluginValueRepresentation_UI;
+
+        case ValueRepresentation_UnsignedLong:
+          return OrthancPluginValueRepresentation_UL;
+
+        case ValueRepresentation_UnsignedShort:
+          return OrthancPluginValueRepresentation_US;
+
+        case ValueRepresentation_UnlimitedText:
+          return OrthancPluginValueRepresentation_UT;
+
+        case ValueRepresentation_Unknown:
+          return OrthancPluginValueRepresentation_UN;  // Unknown
+
+          // These VR are not supported as of DCMTK 3.6.0, so they are
+          // mapped to "UN" (unknown) VR in the plugins
+        case ValueRepresentation_OtherDouble:          
+        case ValueRepresentation_OtherLong:
+        case ValueRepresentation_UniversalResource:
+        case ValueRepresentation_UnlimitedCharacters:
+          return OrthancPluginValueRepresentation_UN;
+
+        default:
+          throw OrthancException(ErrorCode_ParameterOutOfRange);
+      }
+    }
   }
 }

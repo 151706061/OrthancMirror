@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -986,7 +986,7 @@ namespace Orthanc
       {
         const OrthancPluginDicomTag& tag = *reinterpret_cast<const OrthancPluginDicomTag*>(answer.valueGeneric);
         assert(answerDicomMap_ != NULL);
-        answerDicomMap_->SetValue(tag.group, tag.element, std::string(tag.value));
+        answerDicomMap_->SetValue(tag.group, tag.element, std::string(tag.value), false);
         break;
       }
 

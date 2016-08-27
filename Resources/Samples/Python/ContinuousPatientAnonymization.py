@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 # Orthanc - A Lightweight, RESTful DICOM Store
-# Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+# Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
 # Department, University Hospital of Liege, Belgium
 #
 # This program is free software: you can redistribute it and/or
@@ -37,7 +37,7 @@ been received for this patient for a sufficient amount of time - cf.
 the configuration option "StableAge").
 
 Usage: %s [hostname] [HTTP port]
-For instance: %s localhost 8042
+For instance: %s 127.0.0.1 8042
 """ % (sys.argv[0], sys.argv[0]))
     exit(-1)
 

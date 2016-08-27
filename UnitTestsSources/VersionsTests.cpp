@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -102,7 +102,7 @@ TEST(Versions, ZlibStatic)
 
 TEST(Versions, BoostStatic)
 {
-  ASSERT_STREQ("1_59", BOOST_LIB_VERSION);
+  ASSERT_STREQ("1_60", BOOST_LIB_VERSION);
 }
 
 TEST(Versions, CurlStatic)
@@ -113,7 +113,7 @@ TEST(Versions, CurlStatic)
 
 TEST(Versions, PngStatic)
 {
-  ASSERT_EQ(10512, png_access_version_number());
+  ASSERT_EQ(10512u, png_access_version_number());
   ASSERT_STREQ("1.5.12", PNG_LIBPNG_VER_STRING);
 }
 

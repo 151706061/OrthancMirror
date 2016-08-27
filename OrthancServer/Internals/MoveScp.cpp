@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -86,6 +86,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "../FromDcmtkBridge.h"
 #include "../ToDcmtkBridge.h"
+#include "../OrthancInitialization.h"
 #include "../../Core/Logging.h"
 #include "../../Core/OrthancException.h"
 
@@ -129,13 +130,14 @@ namespace Orthanc
       if (data.lastRequest_ == NULL)
       {
         DicomMap input;
-        FromDcmtkBridge::Convert(input, *requestIdentifiers);
+        FromDcmtkBridge::Convert(input, *requestIdentifiers, ORTHANC_MAXIMUM_TAG_LENGTH,
+                                 Configuration::GetDefaultEncoding());
 
         try
         {
           data.iterator_.reset(data.handler_->Handle(data.target_, input,
                                                      *data.remoteIp_, *data.remoteAet_,
-                                                     *data.calledAet_));
+                                                     *data.calledAet_, request->MessageID));
 
           if (data.iterator_.get() == NULL)
           {

@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -32,44 +32,61 @@
 
 #pragma once
 
+#include "../ParsedDicomFile.h"
+
 #include <memory>
 
-#include "../IDicomImageDecoder.h"
-
 class DcmDataset;
+class DcmCodec;
+class DcmCodecParameter;
 
 namespace Orthanc
 {
-  class DicomImageDecoder : public IDicomImageDecoder
+  class DicomImageDecoder : public boost::noncopyable
   {
   private:
     class ImageSource;
 
-    static ImageAccessor* DecodeUncompressedImageInternal(DcmDataset& dataset,
-                                                          unsigned int frame);
+    DicomImageDecoder()   // This is a fully abstract class, no constructor
+    {
+    }
 
-    static bool IsPsmctRle1(DcmDataset& dataset);
-
-    static ImageAccessor* CreateImage(DcmDataset& dataset);
-
-    static bool IsUncompressedImage(const DcmDataset& dataset);
+    static ImageAccessor* CreateImage(DcmDataset& dataset,
+                                      bool ignorePhotometricInterpretation);
 
     static ImageAccessor* DecodeUncompressedImage(DcmDataset& dataset,
                                                   unsigned int frame);
 
-#if ORTHANC_JPEG_LOSSLESS_ENABLED == 1
-    static ImageAccessor* DecodeJpegLossless(DcmDataset& dataset,
-                                             unsigned int frame);
-#endif
-
-  public:
-    virtual ImageAccessor *Decode(ParsedDicomFile& dicom,
-                                  unsigned int frame);
+    static ImageAccessor* ApplyCodec(const DcmCodec& codec,
+                                     const DcmCodecParameter& parameters,
+                                     DcmDataset& dataset,
+                                     unsigned int frame);
 
     static bool TruncateDecodedImage(std::auto_ptr<ImageAccessor>& image,
                                      PixelFormat format,
                                      bool allowColorConversion);
 
     static bool PreviewDecodedImage(std::auto_ptr<ImageAccessor>& image);
+
+    static void ApplyExtractionMode(std::auto_ptr<ImageAccessor>& image,
+                                    ImageExtractionMode mode);
+
+  public:
+    static bool IsPsmctRle1(DcmDataset& dataset);
+
+    static bool DecodePsmctRle1(std::string& output,
+                                DcmDataset& dataset);
+
+    static ImageAccessor *Decode(ParsedDicomFile& dicom,
+                                 unsigned int frame);
+
+    static void ExtractPngImage(std::string& result,
+                                std::auto_ptr<ImageAccessor>& image,
+                                ImageExtractionMode mode);
+
+    static void ExtractJpegImage(std::string& result,
+                                 std::auto_ptr<ImageAccessor>& image,
+                                 ImageExtractionMode mode,
+                                 uint8_t quality);
   };
 }

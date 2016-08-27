@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # Orthanc - A Lightweight, RESTful DICOM Store
-# Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+# Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
 # Department, University Hospital of Liege, Belgium
 #
 # This program is free software: you can redistribute it and/or
@@ -20,7 +20,7 @@
 
 
 
-URL = 'http://localhost:8042'
+URL = 'http://127.0.0.1:8042'
 TARGET = 'sample'
 
 

@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -55,6 +55,7 @@ namespace Orthanc
                                          const DicomMap& input,
                                          const std::string& remoteIp,
                                          const std::string& remoteAet,
-                                         const std::string& calledAet);
+                                         const std::string& calledAet,
+                                         uint16_t messageId);
   };
 }

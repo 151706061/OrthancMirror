@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -33,9 +33,9 @@
 #pragma once
 
 #include "../Core/DicomFormat/DicomInstanceHasher.h"
+#include "../Core/Images/ImageAccessor.h"
 #include "../Core/IDynamicObject.h"
 #include "../Core/RestApi/RestApiOutput.h"
-#include "IDicomImageDecoder.h"
 #include "ServerEnumerations.h"
 
 class DcmDataset;
@@ -51,14 +51,15 @@ namespace Orthanc
 
     ParsedDicomFile(ParsedDicomFile& other);
 
-    void Setup(const void* content,
-               size_t size);
-
     void RemovePrivateTagsInternal(const std::set<DicomTag>* toKeep);
 
     void UpdateStorageUid(const DicomTag& tag,
                           const std::string& value,
                           bool decodeDataUriScheme);
+
+    void InvalidateCache();
+
+    bool EmbedContentInternal(const std::string& dataUriScheme);
 
   public:
     ParsedDicomFile(bool createIdentifiers);  // Create a minimal DICOM instance
@@ -89,16 +90,23 @@ namespace Orthanc
 
     void Replace(const DicomTag& tag,
                  const std::string& utf8Value,
-                 DicomReplaceMode mode = DicomReplaceMode_InsertIfAbsent);
+                 bool decodeDataUriScheme,
+                 DicomReplaceMode mode);
 
     void Replace(const DicomTag& tag,
                  const Json::Value& value,  // Assumed to be encoded with UTF-8
                  bool decodeDataUriScheme,
-                 DicomReplaceMode mode = DicomReplaceMode_InsertIfAbsent);
+                 DicomReplaceMode mode);
 
     void Insert(const DicomTag& tag,
                 const Json::Value& value,   // Assumed to be encoded with UTF-8
                 bool decodeDataUriScheme);
+
+    void ReplacePlainString(const DicomTag& tag,
+                            const std::string& utf8Value)
+    {
+      Replace(tag, utf8Value, false, DicomReplaceMode_InsertIfAbsent);
+    }
 
     void RemovePrivateTags()
     {
@@ -126,24 +134,6 @@ namespace Orthanc
     void EmbedImage(const std::string& mime,
                     const std::string& content);
 
-    ImageAccessor* ExtractImage(IDicomImageDecoder& decoder,
-                                unsigned int frame);
-
-    ImageAccessor* ExtractImage(IDicomImageDecoder& decoder,
-                                unsigned int frame,
-                                ImageExtractionMode mode);
-
-    void ExtractPngImage(std::string& result,
-                         IDicomImageDecoder& decoder,
-                         unsigned int frame,
-                         ImageExtractionMode mode);
-
-    void ExtractJpegImage(std::string& result,
-                          IDicomImageDecoder& decoder,
-                          unsigned int frame,
-                          ImageExtractionMode mode,
-                          uint8_t quality);
-
     Encoding GetEncoding() const;
 
     void SetEncoding(Encoding encoding);
@@ -163,6 +153,12 @@ namespace Orthanc
     bool ExtractPdf(std::string& pdf);
 
     void Convert(DicomMap& tags);
+
+    void GetRawFrame(std::string& target, // OUT
+                     std::string& mime,   // OUT
+                     unsigned int frameId);  // IN
+
+    unsigned int GetFramesCount() const;
 
     static ParsedDicomFile* CreateFromJson(const Json::Value& value,
                                            DicomFromJsonFlags flags);

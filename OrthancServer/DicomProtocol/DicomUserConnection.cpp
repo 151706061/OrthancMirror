@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -86,6 +86,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../../Core/OrthancException.h"
 #include "../FromDcmtkBridge.h"
 #include "../ToDcmtkBridge.h"
+#include "../OrthancInitialization.h"
 
 #include <dcmtk/dcmdata/dcistrmb.h>
 #include <dcmtk/dcmdata/dcistrmf.h>
@@ -132,6 +133,9 @@ static const unsigned int MAXIMUM_STORAGE_SOP_CLASSES = 64;
 
 namespace Orthanc
 {
+  // By default, the timeout for DICOM SCU (client) connections is set to 10 seconds
+  static uint32_t defaultTimeout_ = 10;
+
   struct DicomUserConnection::PImpl
   {
     // Connection state
@@ -148,7 +152,9 @@ namespace Orthanc
 
     void CheckIsOpen() const;
 
-    void Store(DcmInputStream& is, DicomUserConnection& connection);
+    void Store(DcmInputStream& is, 
+               DicomUserConnection& connection,
+               uint16_t moveOriginatorID);
   };
 
 
@@ -251,7 +257,9 @@ namespace Orthanc
   }
 
 
-  void DicomUserConnection::PImpl::Store(DcmInputStream& is, DicomUserConnection& connection)
+  void DicomUserConnection::PImpl::Store(DcmInputStream& is, 
+                                         DicomUserConnection& connection,
+                                         uint16_t moveOriginatorID)
   {
     CheckIsOpen();
 
@@ -325,18 +333,28 @@ namespace Orthanc
     }
 
     // Prepare the transmission of data
-    T_DIMSE_C_StoreRQ req;
-    memset(&req, 0, sizeof(req));
-    req.MessageID = assoc_->nextMsgID++;
-    strcpy(req.AffectedSOPClassUID, sopClass);
-    strcpy(req.AffectedSOPInstanceUID, sopInstance);
-    req.DataSetType = DIMSE_DATASET_PRESENT;
-    req.Priority = DIMSE_PRIORITY_MEDIUM;
+    T_DIMSE_C_StoreRQ request;
+    memset(&request, 0, sizeof(request));
+    request.MessageID = assoc_->nextMsgID++;
+    strncpy(request.AffectedSOPClassUID, sopClass, DIC_UI_LEN);
+    request.Priority = DIMSE_PRIORITY_MEDIUM;
+    request.DataSetType = DIMSE_DATASET_PRESENT;
+    strncpy(request.AffectedSOPInstanceUID, sopInstance, DIC_UI_LEN);
+
+    strncpy(request.MoveOriginatorApplicationEntityTitle, 
+            connection.GetLocalApplicationEntityTitle().c_str(), DIC_AE_LEN);
+    request.opts = O_STORE_MOVEORIGINATORAETITLE;
+
+    if (moveOriginatorID != 0)
+    {
+      request.MoveOriginatorID = moveOriginatorID;  // The type DIC_US is an alias for uint16_t
+      request.opts |= O_STORE_MOVEORIGINATORID;
+    }
 
     // Finally conduct transmission of data
     T_DIMSE_C_StoreRSP rsp;
     DcmDataset* statusDetail = NULL;
-    Check(DIMSE_storeUser(assoc_, presID, &req,
+    Check(DIMSE_storeUser(assoc_, presID, &request,
                           NULL, dcmff.getDataset(), /*progressCallback*/ NULL, NULL,
                           /*opt_blockMode*/ DIMSE_BLOCKING, /*opt_dimse_timeout*/ dimseTimeout_,
                           &rsp, &statusDetail, NULL));
@@ -380,11 +398,13 @@ namespace Orthanc
       else
       {
         DicomMap m;
-        FromDcmtkBridge::Convert(m, *responseIdentifiers);
+        FromDcmtkBridge::Convert(m, *responseIdentifiers, 
+                                 ORTHANC_MAXIMUM_TAG_LENGTH,
+                                 Configuration::GetDefaultEncoding());
 
         if (!m.HasTag(DICOM_TAG_QUERY_RETRIEVE_LEVEL))
         {
-          m.SetValue(DICOM_TAG_QUERY_RETRIEVE_LEVEL, payload.level);
+          m.SetValue(DICOM_TAG_QUERY_RETRIEVE_LEVEL, payload.level, false);
         }
 
         payload.answers->Add(m);
@@ -419,9 +439,27 @@ namespace Orthanc
         throw OrthancException(ErrorCode_InternalError);
     }
 
-    if (level == ResourceType_Study)
+    switch (level)
     {
-      allowedTags.insert(DICOM_TAG_MODALITIES_IN_STUDY);
+      case ResourceType_Patient:
+        allowedTags.insert(DICOM_TAG_NUMBER_OF_PATIENT_RELATED_STUDIES);
+        allowedTags.insert(DICOM_TAG_NUMBER_OF_PATIENT_RELATED_SERIES);
+        allowedTags.insert(DICOM_TAG_NUMBER_OF_PATIENT_RELATED_INSTANCES);
+        break;
+
+      case ResourceType_Study:
+        allowedTags.insert(DICOM_TAG_MODALITIES_IN_STUDY);
+        allowedTags.insert(DICOM_TAG_NUMBER_OF_STUDY_RELATED_SERIES);
+        allowedTags.insert(DICOM_TAG_NUMBER_OF_STUDY_RELATED_INSTANCES);
+        allowedTags.insert(DICOM_TAG_SOP_CLASSES_IN_STUDY);
+        break;
+
+      case ResourceType_Series:
+        allowedTags.insert(DICOM_TAG_NUMBER_OF_SERIES_RELATED_INSTANCES);
+        break;
+
+      default:
+        break;
     }
 
     allowedTags.insert(DICOM_TAG_SPECIFIC_CHARACTER_SET);
@@ -461,7 +499,7 @@ namespace Orthanc
 
         for (std::set<DicomTag>::const_iterator it = tags.begin(); it != tags.end(); ++it)
         {
-          if (FromDcmtkBridge::GetValueRepresentation(*it) == ValueRepresentation_Date)
+          if (FromDcmtkBridge::LookupValueRepresentation(*it) == ValueRepresentation_Date)
           {
             // Replace a "*" query by an empty query ("") for "date"
             // value representations. Necessary to search over dates
@@ -472,7 +510,7 @@ namespace Orthanc
                 !value->IsNull() &&
                 value->GetContent() == "*")
             {
-              fix->SetValue(*it, "");
+              fix->SetValue(*it, "", false);
             }
           }
         }
@@ -511,9 +549,9 @@ namespace Orthanc
     T_DIMSE_C_FindRQ request;
     memset(&request, 0, sizeof(request));
     request.MessageID = association->nextMsgID++;
-    strcpy(request.AffectedSOPClassUID, sopClass);
-    request.DataSetType = DIMSE_DATASET_PRESENT;
+    strncpy(request.AffectedSOPClassUID, sopClass, DIC_UI_LEN);
     request.Priority = DIMSE_PRIORITY_MEDIUM;
+    request.DataSetType = DIMSE_DATASET_PRESENT;
 
     T_DIMSE_C_FindRSP response;
     DcmDataset* statusDetail = NULL;
@@ -678,10 +716,10 @@ namespace Orthanc
     T_DIMSE_C_MoveRQ request;
     memset(&request, 0, sizeof(request));
     request.MessageID = pimpl_->assoc_->nextMsgID++;
-    strcpy(request.AffectedSOPClassUID, sopClass);
-    request.DataSetType = DIMSE_DATASET_PRESENT;
+    strncpy(request.AffectedSOPClassUID, sopClass, DIC_UI_LEN);
     request.Priority = DIMSE_PRIORITY_MEDIUM;
-    strncpy(request.MoveDestination, targetAet.c_str(), sizeof(DIC_AE) / sizeof(char));
+    request.DataSetType = DIMSE_DATASET_PRESENT;
+    strncpy(request.MoveDestination, targetAet.c_str(), DIC_AE_LEN);
 
     T_DIMSE_C_MoveRSP response;
     DcmDataset* statusDetail = NULL;
@@ -747,7 +785,7 @@ namespace Orthanc
     remotePort_ = 104;
     manufacturer_ = ModalityManufacturer_Generic;
 
-    SetTimeout(10); 
+    SetTimeout(defaultTimeout_);
     pimpl_->net_ = NULL;
     pimpl_->params_ = NULL;
     pimpl_->assoc_ = NULL;
@@ -920,7 +958,9 @@ namespace Orthanc
     return pimpl_->IsOpen();
   }
 
-  void DicomUserConnection::Store(const char* buffer, size_t size)
+  void DicomUserConnection::Store(const char* buffer, 
+                                  size_t size,
+                                  uint16_t moveOriginatorID)
   {
     // Prepare an input stream for the memory buffer
     DcmInputBufferStream is;
@@ -928,22 +968,24 @@ namespace Orthanc
       is.setBuffer(buffer, size);
     is.setEos();
       
-    pimpl_->Store(is, *this);
+    pimpl_->Store(is, *this, moveOriginatorID);
   }
 
-  void DicomUserConnection::Store(const std::string& buffer)
+  void DicomUserConnection::Store(const std::string& buffer,
+                                  uint16_t moveOriginatorID)
   {
     if (buffer.size() > 0)
-      Store(reinterpret_cast<const char*>(&buffer[0]), buffer.size());
+      Store(reinterpret_cast<const char*>(&buffer[0]), buffer.size(), moveOriginatorID);
     else
-      Store(NULL, 0);
+      Store(NULL, 0, moveOriginatorID);
   }
 
-  void DicomUserConnection::StoreFile(const std::string& path)
+  void DicomUserConnection::StoreFile(const std::string& path,
+                                      uint16_t moveOriginatorID)
   {
     // Prepare an input stream for the file
     DcmInputFileStream is(path.c_str());
-    pimpl_->Store(is, *this);
+    pimpl_->Store(is, *this, moveOriginatorID);
   }
 
   bool DicomUserConnection::Echo()
@@ -974,16 +1016,9 @@ namespace Orthanc
 
 
   void DicomUserConnection::Move(const std::string& targetAet,
+                                 ResourceType level,
                                  const DicomMap& findResult)
   {
-    if (!findResult.HasTag(DICOM_TAG_QUERY_RETRIEVE_LEVEL))
-    {
-      throw OrthancException(ErrorCode_InternalError);
-    }
-
-    const std::string tmp = findResult.GetValue(DICOM_TAG_QUERY_RETRIEVE_LEVEL).GetContent();
-    ResourceType level = StringToResourceType(tmp.c_str());
-
     DicomMap move;
     switch (level)
     {
@@ -1014,11 +1049,26 @@ namespace Orthanc
   }
 
 
+  void DicomUserConnection::Move(const std::string& targetAet,
+                                 const DicomMap& findResult)
+  {
+    if (!findResult.HasTag(DICOM_TAG_QUERY_RETRIEVE_LEVEL))
+    {
+      throw OrthancException(ErrorCode_InternalError);
+    }
+
+    const std::string tmp = findResult.GetValue(DICOM_TAG_QUERY_RETRIEVE_LEVEL).GetContent();
+    ResourceType level = StringToResourceType(tmp.c_str());
+
+    Move(targetAet, level, findResult);
+  }
+
+
   void DicomUserConnection::MovePatient(const std::string& targetAet,
                                         const std::string& patientId)
   {
     DicomMap query;
-    query.SetValue(DICOM_TAG_PATIENT_ID, patientId);
+    query.SetValue(DICOM_TAG_PATIENT_ID, patientId, false);
     MoveInternal(targetAet, ResourceType_Patient, query);
   }
 
@@ -1026,7 +1076,7 @@ namespace Orthanc
                                       const std::string& studyUid)
   {
     DicomMap query;
-    query.SetValue(DICOM_TAG_STUDY_INSTANCE_UID, studyUid);
+    query.SetValue(DICOM_TAG_STUDY_INSTANCE_UID, studyUid, false);
     MoveInternal(targetAet, ResourceType_Study, query);
   }
 
@@ -1035,8 +1085,8 @@ namespace Orthanc
                                        const std::string& seriesUid)
   {
     DicomMap query;
-    query.SetValue(DICOM_TAG_STUDY_INSTANCE_UID, studyUid);
-    query.SetValue(DICOM_TAG_SERIES_INSTANCE_UID, seriesUid);
+    query.SetValue(DICOM_TAG_STUDY_INSTANCE_UID, studyUid, false);
+    query.SetValue(DICOM_TAG_SERIES_INSTANCE_UID, seriesUid, false);
     MoveInternal(targetAet, ResourceType_Series, query);
   }
 
@@ -1046,23 +1096,25 @@ namespace Orthanc
                                          const std::string& instanceUid)
   {
     DicomMap query;
-    query.SetValue(DICOM_TAG_STUDY_INSTANCE_UID, studyUid);
-    query.SetValue(DICOM_TAG_SERIES_INSTANCE_UID, seriesUid);
-    query.SetValue(DICOM_TAG_SOP_INSTANCE_UID, instanceUid);
+    query.SetValue(DICOM_TAG_STUDY_INSTANCE_UID, studyUid, false);
+    query.SetValue(DICOM_TAG_SERIES_INSTANCE_UID, seriesUid, false);
+    query.SetValue(DICOM_TAG_SOP_INSTANCE_UID, instanceUid, false);
     MoveInternal(targetAet, ResourceType_Instance, query);
   }
 
 
   void DicomUserConnection::SetTimeout(uint32_t seconds)
   {
-    if (seconds <= 0)
+    if (seconds == 0)
     {
-      throw OrthancException(ErrorCode_ParameterOutOfRange);
+      DisableTimeout();
     }
-
-    dcmConnectionTimeout.set(seconds);
-    pimpl_->dimseTimeout_ = seconds;
-    pimpl_->acseTimeout_ = 10;
+    else
+    {
+      dcmConnectionTimeout.set(seconds);
+      pimpl_->dimseTimeout_ = seconds;
+      pimpl_->acseTimeout_ = 10;  // Timeout used during association negociation
+    }
   }
 
 
@@ -1074,7 +1126,7 @@ namespace Orthanc
      */
     dcmConnectionTimeout.set(-1);
     pimpl_->dimseTimeout_ = 0;
-    pimpl_->acseTimeout_ = 10;
+    pimpl_->acseTimeout_ = 10;  // Timeout used during association negociation
   }
 
 
@@ -1144,4 +1196,12 @@ namespace Orthanc
 
     ExecuteFind(result, pimpl_->assoc_, dataset, sopClass, true, NULL, pimpl_->dimseTimeout_);
   }
+
+  
+  void DicomUserConnection::SetDefaultTimeout(uint32_t seconds)
+  {
+    LOG(INFO) << "Default timeout for DICOM connections if Orthanc acts as SCU (client): " 
+              << seconds << " seconds (0 = no timeout)";
+    defaultTimeout_ = seconds;
+  }  
 }

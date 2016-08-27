@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -39,7 +39,7 @@
 namespace Orthanc
 {
   StorePeerCommand::StorePeerCommand(ServerContext& context,
-                                     const OrthancPeerParameters& peer,
+                                     const WebServiceParameters& peer,
                                      bool ignoreExceptions) : 
     context_(context),
     peer_(peer),
@@ -51,16 +51,7 @@ namespace Orthanc
                                const ListOfStrings& inputs)
   {
     // Configure the HTTP client
-    HttpClient client;
-    client.SetProxy(Configuration::GetGlobalStringParameter("HttpProxy", ""));
-    if (peer_.GetUsername().size() != 0 && 
-        peer_.GetPassword().size() != 0)
-    {
-      client.SetCredentials(peer_.GetUsername().c_str(), 
-                            peer_.GetPassword().c_str());
-    }
-
-    client.SetUrl(peer_.GetUrl() + "instances");
+    HttpClient client(peer_, "instances");
     client.SetMethod(HttpMethod_Post);
 
     for (ListOfStrings::const_iterator

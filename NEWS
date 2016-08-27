@@ -1,9 +1,88 @@
 Pending changes in the mainline
 ===============================
 
+* New configuration options: "DicomScuTimeout" and "DicomScpTimeout"
+* "Permissive" flag for URI "/modalities/{...}/store" to ignore C-Store transfer errors
+* "Asynchronous" flag for URIs "/modalities/{...}/store" and "/peers/{...}/store"
+  to avoid waiting for the completion of image transfers
+
+
+Version 1.1.0 (2016/06/27)
+==========================
+
+General
+-------
+
+* HTTPS client certificates can be associated with Orthanc peers to enhance security over Internet
+* Possibility to use PKCS#11 authentication for hardware security modules with Orthanc peers
+* New command-line option "--logfile" to output the Orthanc log to the given file
+* Support of SIGHUP signal (restart Orthanc only if the configuration files have changed)
+
+REST API
+--------
+
+* New URI: "/instances/.../frames/.../raw" to access the raw frames (bypass image decoding)
+* New URI "/modalities/.../move" to issue C-Move SCU requests
+* "MoveOriginatorID" can be specified for "/modalities/.../store"
+
+Dicom protocol
+--------------
+
+* Support of optional tags for counting resources in C-Find:
+  0008-0061, 0008-0062, 0020-1200, 0020-1202, 0020-1204, 0020-1206, 0020-1208, 0020-1209
+* Support of Move Originator Message ID (0000,1031) in C-Store responses driven by C-Move
+
+Plugins
+-------
+
+* Speedup in plugins by removing unnecessary locks
+* New callback to filter incoming HTTP requests: OrthancPluginRegisterIncomingHttpRequestFilter()
+* New callback to handle non-worklists C-Find requests: OrthancPluginRegisterFindCallback()
+* New callback to handle C-Move requests: OrthancPluginRegisterMoveCallback()
+* New function: "OrthancPluginHttpClient()" to do HTTP requests with full control
+* New function: "OrthancPluginGenerateUuid()" to generate a UUID
+* More than one custom image decoder can be installed (e.g. to handle different transfer syntaxes)
+
+Lua
+---
+
+* Access to the HTTP headers in the "IncomingHttpRequestFilter()" callback
+
+Image decoding
+--------------
+
+* Huge speedup if decoding the family of JPEG transfer syntaxes
+* Refactoring leading to speedups with custom image decoders (including Web viewer plugin)
+* Support decoding of RLE Lossless transfer syntax
+* Support of signed 16bpp images in ParsedDicomFile
+
+Maintenance
+-----------
+
+* New logo of Orthanc
+* Fix issue 11 (is_regular_file() fails for FILE_ATTRIBUTE_REPARSE_POINT)
+* Fix issue 16 ("Limit" parameter error in REST API /tools/find method)
+* Fix of Debian bug #818512 ("FTBFS: Please install libdcmtk*-dev")
+* Fix of Debian bug #823139 ("orthanc: Please provide RecoverCompressedFile.cpp")
+* Replaced "localhost" by "127.0.0.1", as it might impact performance on Windows
+* Compatibility with CMake >= 3.5.0
+* Possibility to use forthcoming DCMTK 3.6.1 in static builds (instead of 3.6.0)
+* Upgrade to Boost 1.60.0 for static builds
+* Use of HTTP status 403 Forbidden (instead of 401) if access to a REST resource is disallowed
+* Option "HttpsVerifyPeers" can be used to connect against self-signed HTTPS certificates
+* New configuration option "AllowFindSopClassesInStudy"
+* Macro "__linux" (now obsolete) replaced by macro "__linux__" (maybe solves Debian bug #821011)
+* Modification of instances can now replace PixelData (resp. EncapsulatedDocument) with 
+  provided a PNG/JPEG image (resp. PDF file) if it is encoded using Data URI Scheme
+* Dropped support of Google Log
+
+
+Version 1.0.0 (2015/12/15)
+==========================
+
 * Lua: "IncomingFindRequestFilter()" to apply filters to incoming C-Find requests
-* Fix of DICOMDIR generation with DCMTK 3.6.1, support of encodings
 * New function in plugin SDK: "OrthancPluginSendMultipartItem2()"
+* Fix of DICOMDIR generation with DCMTK 3.6.1, support of encodings
 * Fix range search if the lower or upper limit is absent
 * Fix modality worklists lookups if tags with UN (unknown) VR are present
 * Warn about badly formatted modality/peer definitions in configuration file at startup
@@ -636,7 +715,7 @@ Version 0.2.3 (2012/10/26)
 Version 0.2.2 (2012/10/04)
 ==========================
 
-* Switch to Google Logging
+* Switch to Google Log
 * Fixes to Debian packaging
 
 

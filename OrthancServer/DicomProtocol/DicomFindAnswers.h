@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -41,19 +41,29 @@ namespace Orthanc
   private:
     class Answer;
 
+    bool                 isWorklist_;
     std::vector<Answer*> answers_;
     bool                 complete_;
 
     Answer& GetAnswerInternal(size_t index) const;
 
   public:
-    DicomFindAnswers() : complete_(true)
+    DicomFindAnswers(bool isWorklist) : 
+      isWorklist_(isWorklist),
+      complete_(true)
     {
     }
 
     ~DicomFindAnswers()
     {
       Clear();
+    }
+
+    void SetWorklist(bool isWorklist);
+
+    bool IsWorklist() const
+    {
+      return isWorklist_;
     }
 
     void Clear();
@@ -64,7 +74,7 @@ namespace Orthanc
 
     void Add(ParsedDicomFile& dicom);
 
-    void Add(const char* dicom,
+    void Add(const void* dicom,
              size_t size);
 
     size_t GetSize() const

@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -1848,7 +1848,7 @@ namespace Orthanc
 
   void ServerIndex::UnstableResourcesMonitorThread(ServerIndex* that)
   {
-    int stableAge = Configuration::GetGlobalIntegerParameter("StableAge", 60);
+    int stableAge = Configuration::GetGlobalUnsignedIntegerParameter("StableAge", 60);
     if (stableAge <= 0)
     {
       stableAge = 60;
@@ -2176,5 +2176,37 @@ namespace Orthanc
       resources[pos] = db_.GetPublicId(*it);
       instances[pos] = db_.GetPublicId(instance);
     }
+  }
+
+
+  bool ServerIndex::LookupParent(std::string& target,
+                                 const std::string& publicId,
+                                 ResourceType parentType)
+  {
+    boost::mutex::scoped_lock lock(mutex_);
+
+    ResourceType type;
+    int64_t id;
+    if (!db_.LookupResource(id, type, publicId))
+    {
+      throw OrthancException(ErrorCode_UnknownResource);
+    }
+
+    while (type != parentType)
+    {
+      int64_t parentId;
+
+      if (type == ResourceType_Patient ||    // Cannot further go up in hierarchy
+          !db_.LookupParent(parentId, id))
+      {
+        return false;
+      }
+
+      id = parentId;
+      type = GetParentResourceType(type);
+    }
+
+    target = db_.GetPublicId(id);
+    return true;
   }
 }

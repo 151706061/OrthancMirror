@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -38,6 +38,7 @@
 
 #include "JpegErrorManager.h"
 
+#include <stdlib.h>
 #include <vector>
 
 namespace Orthanc
@@ -110,17 +111,17 @@ namespace Orthanc
   }
 
 
-  void JpegWriter::WriteToFile(const char* filename,
-                               unsigned int width,
-                               unsigned int height,
-                               unsigned int pitch,
-                               PixelFormat format,
-                               const void* buffer)
+  void JpegWriter::WriteToFileInternal(const std::string& filename,
+                                       unsigned int width,
+                                       unsigned int height,
+                                       unsigned int pitch,
+                                       PixelFormat format,
+                                       const void* buffer)
   {
-    FILE* fp = fopen(filename, "wb");
+    FILE* fp = Toolbox::OpenFile(filename, FileMode_WriteBinary);
     if (fp == NULL)
     {
-      throw OrthancException(ErrorCode_FullStorage);
+      throw OrthancException(ErrorCode_CannotWriteFile);
     }
 
     std::vector<uint8_t*> lines;
@@ -155,12 +156,12 @@ namespace Orthanc
   }
 
 
-  void JpegWriter::WriteToMemory(std::string& jpeg,
-                                 unsigned int width,
-                                 unsigned int height,
-                                 unsigned int pitch,
-                                 PixelFormat format,
-                                 const void* buffer)
+  void JpegWriter::WriteToMemoryInternal(std::string& jpeg,
+                                         unsigned int width,
+                                         unsigned int height,
+                                         unsigned int pitch,
+                                         PixelFormat format,
+                                         const void* buffer)
   {
     std::vector<uint8_t*> lines;
     GetLines(lines, height, pitch, format, buffer);

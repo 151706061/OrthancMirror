@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -49,9 +49,12 @@ namespace Orthanc
 
 #include "../../Core/FileStorage/IStorageArea.h"
 #include "../../Core/HttpServer/IHttpHandler.h"
+#include "../../Core/HttpServer/IIncomingHttpRequestFilter.h"
 #include "../../OrthancServer/IServerListener.h"
 #include "../../OrthancServer/IDicomImageDecoder.h"
 #include "../../OrthancServer/DicomProtocol/IWorklistRequestHandlerFactory.h"
+#include "../../OrthancServer/DicomProtocol/IFindRequestHandlerFactory.h"
+#include "../../OrthancServer/DicomProtocol/IMoveRequestHandlerFactory.h"
 #include "OrthancPluginDatabase.h"
 #include "PluginsManager.h"
 
@@ -67,15 +70,18 @@ namespace Orthanc
     public IPluginServiceProvider, 
     public IServerListener,
     public IWorklistRequestHandlerFactory,
-    public IDicomImageDecoder
+    public IDicomImageDecoder,
+    public IIncomingHttpRequestFilter,
+    public IFindRequestHandlerFactory,
+    public IMoveRequestHandlerFactory
   {
   private:
-    struct PImpl;
+    class PImpl;
     boost::shared_ptr<PImpl> pimpl_;
 
     class WorklistHandler;
-
-    void CheckContextAvailable();
+    class FindHandler;
+    class MoveHandler;
 
     void RegisterRestCallback(const void* parameters,
                               bool lock);
@@ -86,7 +92,13 @@ namespace Orthanc
 
     void RegisterWorklistCallback(const void* parameters);
 
+    void RegisterFindCallback(const void* parameters);
+
+    void RegisterMoveCallback(const void* parameters);
+
     void RegisterDecodeImageCallback(const void* parameters);
+
+    void RegisterIncomingHttpRequestFilter(const void* parameters);
 
     void AnswerBuffer(const void* parameters);
 
@@ -135,6 +147,8 @@ namespace Orthanc
 
     void CallHttpClient(const void* parameters);
 
+    void CallHttpClient2(const void* parameters);
+
     void GetFontInfo(const void* parameters);
 
     void DrawText(const void* parameters);
@@ -163,12 +177,22 @@ namespace Orthanc
                               OrthancPluginResourceType resourceType,
                               const char* resource);
 
+    bool InvokeSafeService(SharedLibrary& plugin,
+                           _OrthancPluginService service,
+                           const void* parameters);
+
+    bool InvokeProtectedService(SharedLibrary& plugin,
+                                _OrthancPluginService service,
+                                const void* parameters);
+
   public:
     OrthancPlugins();
 
     virtual ~OrthancPlugins();
 
     void SetServerContext(ServerContext& context);
+
+    void ResetServerContext();
 
     virtual bool Handle(HttpOutput& output,
                         RequestOrigin origin,
@@ -234,8 +258,32 @@ namespace Orthanc
 
     virtual IWorklistRequestHandler* ConstructWorklistRequestHandler();
 
-    virtual ImageAccessor* Decode(ParsedDicomFile& dicom, 
+    bool HasCustomImageDecoder();
+
+    // Contrarily to "Decode()", this method does not fallback to the
+    // builtin image decoder, if no installed custom decoder can
+    // handle the image (it returns NULL in this case).
+    ImageAccessor* DecodeUnsafe(const void* dicom,
+                                size_t size,
+                                unsigned int frame);
+
+    virtual ImageAccessor* Decode(const void* dicom,
+                                  size_t size,
                                   unsigned int frame);
+
+    virtual bool IsAllowed(HttpMethod method,
+                           const char* uri,
+                           const char* ip,
+                           const char* username,
+                           const IHttpHandler::Arguments& httpHeaders) const;
+
+    bool HasFindHandler();
+
+    virtual IFindRequestHandler* ConstructFindRequestHandler();
+
+    bool HasMoveHandler();
+
+    virtual IMoveRequestHandler* ConstructMoveRequestHandler();
   };
 }
 

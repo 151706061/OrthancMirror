@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -92,7 +92,7 @@ namespace Orthanc
         continue;
       }
 
-      ValueRepresentation vr = FromDcmtkBridge::GetValueRepresentation(tag);
+      ValueRepresentation vr = FromDcmtkBridge::LookupValueRepresentation(tag);
 
       if (constraints_.find(tag) != constraints_.end() ||
           sequences_.find(tag) != sequences_.end())
@@ -122,7 +122,8 @@ namespace Orthanc
       else
       {
         std::auto_ptr<DicomValue> value(FromDcmtkBridge::ConvertLeafElement
-                                        (*element, DicomToJsonFlags_None, encoding));
+                                        (*element, DicomToJsonFlags_None, 
+                                         ORTHANC_MAXIMUM_TAG_LENGTH, encoding));
 
         if (value->IsBinary())
         {
@@ -146,7 +147,7 @@ namespace Orthanc
           // DICOM specifies that searches must be case sensitive, except
           // for tags with a PN value representation
           bool sensitive = true;
-          if (vr == ValueRepresentation_PatientName)
+          if (vr == ValueRepresentation_PersonName)
           {
             sensitive = caseSensitivePN;
           }
@@ -221,7 +222,8 @@ namespace Orthanc
         }
 
         std::auto_ptr<DicomValue> value(FromDcmtkBridge::ConvertLeafElement
-                                        (*element, DicomToJsonFlags_None, encoding));
+                                        (*element, DicomToJsonFlags_None, 
+                                         ORTHANC_MAXIMUM_TAG_LENGTH, encoding));
 
         if (value->IsNull() ||
             value->IsBinary() ||

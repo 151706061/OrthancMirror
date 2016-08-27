@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -49,7 +49,7 @@ namespace Orthanc
 
       FileRabi(const char* filename)
       {
-        fp_ = fopen(filename, "rb");
+        fp_ = Toolbox::OpenFile(filename, FileMode_ReadBinary);
         if (!fp_)
         {
           throw OrthancException(ErrorCode_InexistentFile);
@@ -59,7 +59,9 @@ namespace Orthanc
       ~FileRabi()
       {
         if (fp_)
+        {
           fclose(fp_);
+        }
       }
     };
   }
@@ -204,9 +206,9 @@ namespace Orthanc
     AssignWritable(format, width, height, pitch, &data_[0]);
   }
 
-  void PngReader::ReadFromFile(const char* filename)
+  void PngReader::ReadFromFile(const std::string& filename)
   {
-    FileRabi f(filename);
+    FileRabi f(filename.c_str());
 
     char header[8];
     if (fread(header, 1, 8, f.fp_) != 8)

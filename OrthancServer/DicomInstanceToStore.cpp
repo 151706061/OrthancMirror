@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -34,6 +34,7 @@
 #include "DicomInstanceToStore.h"
 
 #include "FromDcmtkBridge.h"
+#include "OrthancInitialization.h"
 #include "../Core/Logging.h"
 
 #include <dcmtk/dcmdata/dcfilefo.h>
@@ -104,7 +105,9 @@ namespace Orthanc
     {
       summary_.Allocate();
       FromDcmtkBridge::Convert(summary_.GetContent(), 
-                               *parsed_.GetContent().GetDcmtkObject().getDataset());
+                               *parsed_.GetContent().GetDcmtkObject().getDataset(),
+                               ORTHANC_MAXIMUM_TAG_LENGTH,                               
+                               Configuration::GetDefaultEncoding());
     }
     
     if (!json_.HasContent())
@@ -114,7 +117,8 @@ namespace Orthanc
                               *parsed_.GetContent().GetDcmtkObject().getDataset(),
                               DicomToJsonFormat_Full, 
                               DicomToJsonFlags_Default,
-                              ORTHANC_MAXIMUM_TAG_LENGTH);
+                              ORTHANC_MAXIMUM_TAG_LENGTH,
+                              Configuration::GetDefaultEncoding());
     }
   }
 

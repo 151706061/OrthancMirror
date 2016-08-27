@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -33,6 +33,7 @@
 #pragma once
 
 #include "Enumerations.h"
+#include "WebServiceParameters.h"
 
 #include <string>
 #include <boost/shared_ptr.hpp>
@@ -42,7 +43,12 @@ namespace Orthanc
 {
   class HttpClient
   {
+  public:
+    typedef std::map<std::string, std::string>  HttpHeaders;
+
   private:
+    class GlobalParameters;
+
     struct PImpl;
     boost::shared_ptr<PImpl> pimpl_;
 
@@ -56,15 +62,28 @@ namespace Orthanc
     std::string proxy_;
     bool verifyPeers_;
     std::string caCertificates_;
+    std::string clientCertificateFile_;
+    std::string clientCertificateKeyFile_;
+    std::string clientCertificateKeyPassword_;
+    bool pkcs11Enabled_;
+    bool headersToLowerCase_;
 
     void Setup();
 
-    void operator= (const HttpClient&);  // Forbidden
+    void operator= (const HttpClient&);  // Assignment forbidden
+    HttpClient(const HttpClient& base);  // Copy forbidden
+
+    bool ApplyInternal(std::string& answerBody,
+                       HttpHeaders* answerHeaders);
+
+    bool ApplyInternal(Json::Value& answerBody,
+                       HttpHeaders* answerHeaders);
 
   public:
-    HttpClient(const HttpClient& base);
-
     HttpClient();
+
+    HttpClient(const WebServiceParameters& service,
+               const std::string& uri);
 
     ~HttpClient();
 
@@ -125,9 +144,32 @@ namespace Orthanc
       return isVerbose_;
     }
 
-    bool Apply(std::string& answer);
+    void AddHeader(const std::string& key,
+                   const std::string& value);
 
-    bool Apply(Json::Value& answer);
+    void ClearHeaders();
+
+    bool Apply(std::string& answerBody)
+    {
+      return ApplyInternal(answerBody, NULL);
+    }
+
+    bool Apply(Json::Value& answerBody)
+    {
+      return ApplyInternal(answerBody, NULL);
+    }
+
+    bool Apply(std::string& answerBody,
+               HttpHeaders& answerHeaders)
+    {
+      return ApplyInternal(answerBody, &answerHeaders);
+    }
+
+    bool Apply(Json::Value& answerBody,
+               HttpHeaders& answerHeaders)
+    {
+      return ApplyInternal(answerBody, &answerHeaders);
+    }
 
     HttpStatus GetLastStatus() const
     {
@@ -157,17 +199,73 @@ namespace Orthanc
       caCertificates_ = certificates;
     }
 
-    const std::string& GetHttpsCACertificates() const;
+    const std::string& GetHttpsCACertificates() const
+    {
+      return caCertificates_;
+    }
 
-    static void GlobalInitialize(bool httpsVerifyPeers,
-                                 const std::string& httpsCACertificates);
+    void SetClientCertificate(const std::string& certificateFile,
+                              const std::string& certificateKeyFile,
+                              const std::string& certificateKeyPassword);
+
+    void SetPkcs11Enabled(bool enabled)
+    {
+      pkcs11Enabled_ = enabled;
+    }
+
+    bool IsPkcs11Enabled() const
+    {
+      return pkcs11Enabled_;
+    }
+
+    const std::string& GetClientCertificateFile() const
+    {
+      return clientCertificateFile_;
+    }
+
+    const std::string& GetClientCertificateKeyFile() const
+    {
+      return clientCertificateKeyFile_;
+    }
+
+    const std::string& GetClientCertificateKeyPassword() const
+    {
+      return clientCertificateKeyPassword_;
+    }
+
+    void SetConvertHeadersToLowerCase(bool lowerCase)
+    {
+      headersToLowerCase_ = lowerCase;
+    }
+
+    bool IsConvertHeadersToLowerCase() const
+    {
+      return headersToLowerCase_;
+    }
+
+    static void GlobalInitialize();
   
     static void GlobalFinalize();
 
+    static void InitializePkcs11(const std::string& module,
+                                 const std::string& pin,
+                                 bool verbose);
+
+    static void ConfigureSsl(bool httpsVerifyPeers,
+                             const std::string& httpsCACertificates);
+
+    static void SetDefaultProxy(const std::string& proxy);
+
     static void SetDefaultTimeout(long timeout);
 
-    void ApplyAndThrowException(std::string& answer);
+    void ApplyAndThrowException(std::string& answerBody);
 
-    void ApplyAndThrowException(Json::Value& answer);
+    void ApplyAndThrowException(Json::Value& answerBody);
+
+    void ApplyAndThrowException(std::string& answerBody,
+                                HttpHeaders& answerHeaders);
+
+    void ApplyAndThrowException(Json::Value& answerBody,
+                                HttpHeaders& answerHeaders);
   };
 }

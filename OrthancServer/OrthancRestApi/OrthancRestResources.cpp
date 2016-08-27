@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -236,28 +236,22 @@ namespace Orthanc
   
   static void ListFrames(RestApiGetCall& call)
   {
-    Json::Value instance;
-    if (OrthancRestApi::GetIndex(call).LookupResource(instance, call.GetUriComponent("id", ""), ResourceType_Instance))
+    std::string publicId = call.GetUriComponent("id", "");
+
+    unsigned int numberOfFrames;
+      
     {
-      unsigned int numberOfFrames = 1;
-
-      try
-      {
-        Json::Value tmp = instance["MainDicomTags"]["NumberOfFrames"];
-        numberOfFrames = boost::lexical_cast<unsigned int>(tmp.asString());
-      }
-      catch (...)
-      {
-      }
-
-      Json::Value result = Json::arrayValue;
-      for (unsigned int i = 0; i < numberOfFrames; i++)
-      {
-        result.append(i);
-      }
-
-      call.GetOutput().AnswerJson(result);
+      ServerContext::DicomCacheLocker locker(OrthancRestApi::GetContext(call), publicId);
+      numberOfFrames = locker.GetDicom().GetFramesCount();
     }
+    
+    Json::Value result = Json::arrayValue;
+    for (unsigned int i = 0; i < numberOfFrames; i++)
+    {
+      result.append(i);
+    }
+    
+    call.GetOutput().AnswerJson(result);
   }
 
 
@@ -266,58 +260,34 @@ namespace Orthanc
     class ImageToEncode
     {
     private:
-      IDicomImageDecoder& decoder_;
-      std::string         format_;
-      std::string         encoded_;
-      ParsedDicomFile&    dicom_;
-      unsigned int        frame_;
-      ImageExtractionMode mode_;
+      std::auto_ptr<ImageAccessor>&  image_;
+      ImageExtractionMode            mode_;
+      std::string                    format_;
+      std::string                    answer_;
 
     public:
-      ImageToEncode(IDicomImageDecoder& decoder,
-                    ParsedDicomFile& dicom,
-                    unsigned int frame,
+      ImageToEncode(std::auto_ptr<ImageAccessor>& image,
                     ImageExtractionMode mode) : 
-        decoder_(decoder),
-        dicom_(dicom),
-        frame_(frame),
+        image_(image),
         mode_(mode)
       {
       }
 
-      ParsedDicomFile& GetDicom() const
-      {
-        return dicom_;
-      }
-
-      unsigned int GetFrame() const
-      {
-        return frame_;
-      }
-
-      ImageExtractionMode GetMode() const
-      {
-        return mode_;
-      }
-
-      void SetFormat(const std::string& format)
-      {
-        format_ = format;
-      }
-
-      std::string& GetTarget()
-      {
-        return encoded_;
-      }
-
       void Answer(RestApiOutput& output)
       {
-        output.AnswerBuffer(encoded_, format_);
+        output.AnswerBuffer(answer_, format_);
       }
 
-      IDicomImageDecoder& GetDecoder() const
+      void EncodeUsingPng()
       {
-        return decoder_;
+        format_ = "image/png";
+        DicomImageDecoder::ExtractPngImage(answer_, image_, mode_);
+      }
+
+      void EncodeUsingJpeg(uint8_t quality)
+      {
+        format_ = "image/jpeg";
+        DicomImageDecoder::ExtractJpegImage(answer_, image_, mode_, quality);
       }
     };
 
@@ -336,9 +306,7 @@ namespace Orthanc
       {
         assert(type == "image");
         assert(subtype == "png");
-        image_.GetDicom().ExtractPngImage(image_.GetTarget(), image_.GetDecoder(), 
-                                          image_.GetFrame(), image_.GetMode());
-        image_.SetFormat("image/png");
+        image_.EncodeUsingPng();
       }
     };
 
@@ -377,9 +345,7 @@ namespace Orthanc
       {
         assert(type == "image");
         assert(subtype == "jpeg");
-        image_.GetDicom().ExtractJpegImage(image_.GetTarget(), image_.GetDecoder(), 
-                                           image_.GetFrame(), image_.GetMode(), quality_);
-        image_.SetFormat("image/jpeg");
+        image_.EncodeUsingJpeg(quality_);
       }
     };
   }
@@ -402,29 +368,35 @@ namespace Orthanc
       return;
     }
 
-    std::string publicId = call.GetUriComponent("id", "");
-    std::string dicomContent;
-    context.ReadFile(dicomContent, publicId, FileContentType_Dicom);
-
-    ParsedDicomFile dicom(dicomContent);
+    std::auto_ptr<ImageAccessor> decoded;
 
     try
     {
+      std::string publicId = call.GetUriComponent("id", "");
+
 #if ORTHANC_PLUGINS_ENABLED == 1
-      IDicomImageDecoder& decoder = context.GetPlugins();
-#else
-      DicomImageDecoder decoder;  // This is Orthanc's built-in decoder
+      if (context.GetPlugins().HasCustomImageDecoder())
+      {
+        // TODO create a cache of file
+        std::string dicomContent;
+        context.ReadFile(dicomContent, publicId, FileContentType_Dicom);
+        decoded.reset(context.GetPlugins().DecodeUnsafe(dicomContent.c_str(), dicomContent.size(), frame));
+
+        /**
+         * Note that we call "DecodeUnsafe()": We do not fallback to
+         * the builtin decoder if no installed decoder plugin is able
+         * to decode the image. This allows us to take advantage of
+         * the cache below.
+         **/
+      }
 #endif
 
-      ImageToEncode image(decoder, dicom, frame, mode);
-
-      HttpContentNegociation negociation;
-      EncodePng png(image);          negociation.Register("image/png", png);
-      EncodeJpeg jpeg(image, call);  negociation.Register("image/jpeg", jpeg);
-
-      if (negociation.Apply(call.GetHttpHeaders()))
+      if (decoded.get() == NULL)
       {
-        image.Answer(call.GetOutput());
+        // Use Orthanc's built-in decoder, using the cache to speed-up
+        // things on multi-frame images
+        ServerContext::DicomCacheLocker locker(OrthancRestApi::GetContext(call), publicId);
+        decoded.reset(DicomImageDecoder::Decode(locker.GetDicom(), frame));
       }
     }
     catch (OrthancException& e)
@@ -444,6 +416,17 @@ namespace Orthanc
 
         call.GetOutput().Redirect(root + "app/images/unsupported.png");
       }
+    }
+
+    ImageToEncode image(decoded, mode);
+
+    HttpContentNegociation negociation;
+    EncodePng png(image);          negociation.Register("image/png", png);
+    EncodeJpeg jpeg(image, call);  negociation.Register("image/jpeg", jpeg);
+
+    if (negociation.Apply(call.GetHttpHeaders()))
+    {
+      image.Answer(call.GetOutput());
     }
   }
 
@@ -471,16 +454,42 @@ namespace Orthanc
 #if ORTHANC_PLUGINS_ENABLED == 1
     IDicomImageDecoder& decoder = context.GetPlugins();
 #else
-    DicomImageDecoder decoder;  // This is Orthanc's built-in decoder
+    DefaultDicomImageDecoder decoder;  // This is Orthanc's built-in decoder
 #endif
 
-    ParsedDicomFile dicom(dicomContent);
-    std::auto_ptr<ImageAccessor> decoded(dicom.ExtractImage(decoder, frame));
+    std::auto_ptr<ImageAccessor> decoded(decoder.Decode(dicomContent.c_str(), dicomContent.size(), frame));
 
     std::string result;
     decoded->ToMatlabString(result);
 
     call.GetOutput().AnswerBuffer(result, "text/plain");
+  }
+
+
+
+  static void GetRawFrame(RestApiGetCall& call)
+  {
+    std::string frameId = call.GetUriComponent("frame", "0");
+
+    unsigned int frame;
+    try
+    {
+      frame = boost::lexical_cast<unsigned int>(frameId);
+    }
+    catch (boost::bad_lexical_cast)
+    {
+      return;
+    }
+
+    std::string publicId = call.GetUriComponent("id", "");
+    std::string raw, mime;
+
+    {
+      ServerContext::DicomCacheLocker locker(OrthancRestApi::GetContext(call), publicId);
+      locker.GetDicom().GetRawFrame(raw, mime, frame);
+    }
+
+    call.GetOutput().AnswerBuffer(raw, mime);
   }
 
 
@@ -1097,7 +1106,7 @@ namespace Orthanc
       size_t limit = 0;
       if (request.isMember("Limit"))
       {
-        int tmp = request["CaseSensitive"].asInt();
+        int tmp = request["Limit"].asInt();
         if (tmp < 0)
         {
           throw OrthancException(ErrorCode_ParameterOutOfRange);
@@ -1287,6 +1296,9 @@ namespace Orthanc
     std::string dicomContent;
     context.ReadFile(dicomContent, publicId, FileContentType_Dicom);
 
+    // TODO Consider using "DicomMap::ParseDicomMetaInformation()" to
+    // speed up things here
+
     ParsedDicomFile dicom(dicomContent);
 
     Json::Value header;
@@ -1347,6 +1359,7 @@ namespace Orthanc
     Register("/instances/{id}/frames/{frame}/image-uint16", GetImage<ImageExtractionMode_UInt16>);
     Register("/instances/{id}/frames/{frame}/image-int16", GetImage<ImageExtractionMode_Int16>);
     Register("/instances/{id}/frames/{frame}/matlab", GetMatlabImage);
+    Register("/instances/{id}/frames/{frame}/raw", GetRawFrame);
     Register("/instances/{id}/pdf", ExtractPdf);
     Register("/instances/{id}/preview", GetImage<ImageExtractionMode_Preview>);
     Register("/instances/{id}/image-uint8", GetImage<ImageExtractionMode_UInt8>);

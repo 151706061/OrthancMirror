@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -44,12 +44,15 @@ namespace Orthanc
     RemoteModalityParameters modality_;
     bool ignoreExceptions_;
     std::string localAet_;
+    uint16_t moveOriginatorID_;
 
   public:
     StoreScuCommand(ServerContext& context,
                     const std::string& localAet,
                     const RemoteModalityParameters& modality,
-                    bool ignoreExceptions);
+                    bool ignoreExceptions,
+                    uint16_t moveOriginatorID /* only makes sense if this 
+                                                 command results from a C-MOVE */);
 
     virtual bool Apply(ListOfStrings& outputs,
                        const ListOfStrings& inputs);

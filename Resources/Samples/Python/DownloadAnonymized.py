@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # Orthanc - A Lightweight, RESTful DICOM Store
-# Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+# Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
 # Department, University Hospital of Liege, Belgium
 #
 # This program is free software: you can redistribute it and/or
@@ -20,7 +20,7 @@
 
 
 
-URL = 'http://localhost:8042'
+URL = 'http://127.0.0.1:8042'
 
 #
 # This sample code will download a ZIP file for each patient that has
@@ -44,6 +44,5 @@ for patient in RestToolbox.DoGet('%s/patients' % URL):
         # Trigger the download
         print('Downloading %s' % name)
         zipContent = RestToolbox.DoGet('%s/patients/%s/archive' % (URL, patient))
-        f = open(os.path.join('/tmp', name + '.zip'), 'wb')
-        f.write(zipContent)
-        f.close()
+        with open(os.path.join('/tmp', name + '.zip'), 'wb') as f:
+            f.write(zipContent)

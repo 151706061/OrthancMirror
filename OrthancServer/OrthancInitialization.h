@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -36,13 +36,15 @@
 #include <set>
 #include <json/json.h>
 #include <stdint.h>
-#include "../Core/HttpServer/MongooseServer.h"
-#include "DicomProtocol/RemoteModalityParameters.h"
-#include "ServerEnumerations.h"
-#include "OrthancPeerParameters.h"
-#include "IDatabaseWrapper.h"
+
 #include "../Core/FileStorage/IStorageArea.h"
+#include "../Core/HttpServer/MongooseServer.h"
 #include "../Core/Images/FontRegistry.h"
+#include "../Core/WebServiceParameters.h"
+
+#include "DicomProtocol/RemoteModalityParameters.h"
+#include "IDatabaseWrapper.h"
+#include "ServerEnumerations.h"
 
 namespace Orthanc
 {
@@ -52,12 +54,18 @@ namespace Orthanc
 
   class Configuration
   {
+  private:
+    Configuration();  // Forbidden, this is a static class
+
   public:
     static std::string GetGlobalStringParameter(const std::string& parameter,
                                                 const std::string& defaultValue);
 
     static int GetGlobalIntegerParameter(const std::string& parameter,
                                          int defaultValue);
+
+    static unsigned int GetGlobalUnsignedIntegerParameter(const std::string& parameter,
+                                                          unsigned int defaultValue);
 
     static bool GetGlobalBoolParameter(const std::string& parameter,
                                        bool defaultValue);
@@ -68,7 +76,7 @@ namespace Orthanc
     static bool LookupDicomModalityUsingAETitle(RemoteModalityParameters& modality,
                                                 const std::string& aet);
 
-    static void GetOrthancPeer(OrthancPeerParameters& peer,
+    static void GetOrthancPeer(WebServiceParameters& peer,
                                const std::string& name);
 
     static void GetListOfDicomModalities(std::set<std::string>& target);
@@ -100,7 +108,7 @@ namespace Orthanc
     static void RemoveModality(const std::string& symbolicName);
 
     static void UpdatePeer(const std::string& symbolicName,
-                           const OrthancPeerParameters& peer);
+                           const WebServiceParameters& peer);
 
     static void RemovePeer(const std::string& symbolicName);
 
@@ -115,5 +123,9 @@ namespace Orthanc
     static void FormatConfiguration(std::string& result);
 
     static const FontRegistry& GetFontRegistry();
+
+    static Encoding GetDefaultEncoding();
+
+    static bool HasConfigurationChanged();
   };
 }

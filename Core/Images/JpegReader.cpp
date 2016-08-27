@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -36,6 +36,7 @@
 #include "JpegErrorManager.h"
 #include "../OrthancException.h"
 #include "../Logging.h"
+#include "../Toolbox.h"
 
 namespace Orthanc
 {
@@ -93,9 +94,9 @@ namespace Orthanc
   }
 
 
-  void JpegReader::ReadFromFile(const char* filename)
+  void JpegReader::ReadFromFile(const std::string& filename)
   {
-    FILE* fp = fopen(filename, "rb");
+    FILE* fp = Toolbox::OpenFile(filename, FileMode_ReadBinary);
     if (!fp)
     {
       throw OrthancException(ErrorCode_InexistentFile);

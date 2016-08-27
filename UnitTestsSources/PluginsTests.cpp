@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -57,7 +57,7 @@ TEST(SharedLibrary, Basic)
   ASSERT_TRUE(l.HasFunction("GetVersionExW"));
   ASSERT_FALSE(l.HasFunction("world"));
 
-#elif defined(__linux) || defined(__FreeBSD_kernel__)
+#elif defined(__linux__) || defined(__FreeBSD_kernel__)
   SharedLibrary l("libdl.so");
   ASSERT_THROW(l.GetFunction("world"), OrthancException);
   ASSERT_TRUE(l.GetFunction("dlopen") != NULL);

@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -106,16 +106,16 @@ namespace Orthanc
     storeMD5_(true),
     provider_(*this),
     dicomCache_(provider_, DICOM_CACHE_SIZE),
-    scheduler_(Configuration::GetGlobalIntegerParameter("LimitJobs", 10)),
+    scheduler_(Configuration::GetGlobalUnsignedIntegerParameter("LimitJobs", 10)),
     lua_(*this),
 #if ORTHANC_PLUGINS_ENABLED == 1
     plugins_(NULL),
 #endif
     done_(false),
-    queryRetrieveArchive_(Configuration::GetGlobalIntegerParameter("QueryRetrieveSize", 10)),
+    queryRetrieveArchive_(Configuration::GetGlobalUnsignedIntegerParameter("QueryRetrieveSize", 10)),
     defaultLocalAet_(Configuration::GetGlobalStringParameter("DicomAet", "ORTHANC"))
   {
-    uint64_t s = Configuration::GetGlobalIntegerParameter("DicomAssociationCloseDelay", 5);  // In seconds
+    uint64_t s = Configuration::GetGlobalUnsignedIntegerParameter("DicomAssociationCloseDelay", 5);  // In seconds
     scu_.SetMillisecondsBeforeClose(s * 1000);  // Milliseconds are expected here
 
     listeners_.push_back(ServerListener(lua_, "Lua"));

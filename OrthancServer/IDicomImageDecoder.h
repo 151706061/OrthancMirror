@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -38,8 +38,6 @@
 
 namespace Orthanc
 {
-  class ParsedDicomFile;
-
   class IDicomImageDecoder : public boost::noncopyable
   {
   public:
@@ -47,7 +45,8 @@ namespace Orthanc
     {
     }
 
-    virtual ImageAccessor* Decode(ParsedDicomFile& dicom,
+    virtual ImageAccessor* Decode(const void* dicom,
+                                  size_t size,
                                   unsigned int frame) = 0;
   };
 }

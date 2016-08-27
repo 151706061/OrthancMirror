@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -65,7 +65,7 @@ namespace Orthanc
 
       for (unsigned int x = 0; x < source.GetWidth(); x++, p++)
       {
-        s += boost::lexical_cast<std::string>(static_cast<int>(*p)) + " ";
+        s += boost::lexical_cast<std::string>(static_cast<double>(*p)) + " ";
       }
 
       target.AddChunk(s);
@@ -121,7 +121,7 @@ namespace Orthanc
   {
     if (buffer_ != NULL)
     {
-      return reinterpret_cast<const uint8_t*>(buffer_) + y * pitch_;
+      return buffer_ + y * pitch_;
     }
     else
     {
@@ -143,7 +143,7 @@ namespace Orthanc
 
     if (buffer_ != NULL)
     {
-      return reinterpret_cast<uint8_t*>(buffer_) + y * pitch_;
+      return buffer_ + y * pitch_;
     }
     else
     {
@@ -174,9 +174,12 @@ namespace Orthanc
     width_ = width;
     height_ = height;
     pitch_ = pitch;
-    buffer_ = const_cast<void*>(buffer);
+    buffer_ = reinterpret_cast<uint8_t*>(const_cast<void*>(buffer));
 
-    assert(GetBytesPerPixel() * width_ <= pitch_);
+    if (GetBytesPerPixel() * width_ > pitch_)
+    {
+      throw OrthancException(ErrorCode_ParameterOutOfRange);
+    }
   }
 
 
@@ -191,9 +194,12 @@ namespace Orthanc
     width_ = width;
     height_ = height;
     pitch_ = pitch;
-    buffer_ = buffer;
+    buffer_ = reinterpret_cast<uint8_t*>(buffer);
 
-    assert(GetBytesPerPixel() * width_ <= pitch_);
+    if (GetBytesPerPixel() * width_ > pitch_)
+    {
+      throw OrthancException(ErrorCode_ParameterOutOfRange);
+    }
   }
 
 
@@ -215,6 +221,10 @@ namespace Orthanc
         ToMatlabStringInternal<int16_t>(buffer, *this);
         break;
 
+      case PixelFormat_Float32:
+        ToMatlabStringInternal<float>(buffer, *this);
+        break;
+
       case PixelFormat_RGB24:
         RGB24ToMatlabString(buffer, *this);
         break;
@@ -224,6 +234,45 @@ namespace Orthanc
     }   
 
     buffer.Flatten(target);
+  }
+
+
+
+  ImageAccessor ImageAccessor::GetRegion(unsigned int x,
+                                         unsigned int y,
+                                         unsigned int width,
+                                         unsigned int height) const
+  {
+    if (x + width > width_ ||
+        y + height > height_)
+    {
+      throw OrthancException(ErrorCode_ParameterOutOfRange);
+    }
+    
+    ImageAccessor result;
+
+    if (width == 0 ||
+        height == 0)
+    {
+      result.AssignWritable(format_, 0, 0, 0, NULL);
+    }
+    else
+    {
+      uint8_t* p = (buffer_ + 
+                    y * pitch_ + 
+                    x * GetBytesPerPixel());
+
+      if (readOnly_)
+      {
+        result.AssignReadOnly(format_, width, height, pitch_, p);
+      }
+      else
+      {
+        result.AssignWritable(format_, width, height, pitch_, p);
+      }
+    }
+
+    return result;
   }
 
 }

@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -54,7 +54,7 @@ namespace Orthanc
     std::string aet_;
     uint16_t port_;
     bool continue_;
-    uint32_t clientTimeout_;
+    uint32_t associationTimeout_;
     IFindRequestHandlerFactory* findRequestHandlerFactory_;
     IMoveRequestHandlerFactory* moveRequestHandlerFactory_;
     IStoreRequestHandlerFactory* storeRequestHandlerFactory_;
@@ -71,8 +71,8 @@ namespace Orthanc
     void SetPortNumber(uint16_t port);
     uint16_t GetPortNumber() const;
 
-    void SetClientTimeout(uint32_t timeout);
-    uint32_t GetClientTimeout() const;
+    void SetAssociationTimeout(uint32_t seconds);
+    uint32_t GetAssociationTimeout() const;
 
     void SetCalledApplicationEntityTitleCheck(bool check);
     bool HasCalledApplicationEntityTitleCheck() const;

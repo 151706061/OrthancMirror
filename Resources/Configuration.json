@@ -106,6 +106,11 @@
   // SOP classes (aka. "promiscuous mode")
   "UnknownSopClassAccepted"            : false,
 
+  // Set the timeout (in seconds) after which the DICOM associations
+  // are closed by the Orthanc SCP (server) if no further DIMSE
+  // command is received from the SCU (client).
+  "DicomScpTimeout" : 30,
+
 
 
   /**
@@ -118,7 +123,8 @@
   // Whether or not SSL is enabled
   "SslEnabled" : false,
 
-  // Path to the SSL certificate (meaningful only if SSL is enabled)
+  // Path to the SSL certificate in the PEM format (meaningful only if
+  // SSL is enabled)
   "SslCertificate" : "certificate.pem",
 
   // Whether or not the password protection is enabled
@@ -144,7 +150,7 @@
      * store (shipped in the DCMTK distribution) started by the
      * command line "storescp 2000".
      **/
-    // "sample" : [ "STORESCP", "localhost", 2000 ]
+    // "sample" : [ "STORESCP", "127.0.0.1", 2000 ]
 
     /**
      * A fourth parameter is available to enable patches for a
@@ -157,6 +163,11 @@
     // "clearcanvas" : [ "CLEARCANVAS", "192.168.1.1", 104, "ClearCanvas" ]
   },
 
+  // The timeout (in seconds) after which the DICOM associations are
+  // considered as closed by the Orthanc SCU (client) if the remote
+  // DICOM SCP (server) does not answer.
+  "DicomScuTimeout" : 10,
+
   // The list of the known Orthanc peers
   "OrthancPeers" : {
     /**
@@ -164,8 +175,24 @@
      * followed by the username/password pair (if the password
      * protection is enabled on the peer).
      **/
-    // "peer"  : [ "http://localhost:8043/", "alice", "alicePassword" ]
-    // "peer2" : [ "http://localhost:8044/" ]
+    // "peer"  : [ "http://127.0.0.1:8043/", "alice", "alicePassword" ]
+    // "peer2" : [ "http://127.0.0.1:8044/" ]
+
+    /**
+     * This is another, more advanced format to define Orthanc
+     * peers. It notably allows to specify a HTTPS client certificate
+     * in the PEM format (as in the "--cert" option of curl), or to
+     * enable PKCS#11 authentication for smart cards.
+     **/
+    // "peer" : {
+    //   "Url" : "http://127.0.0.1:8043/",
+    //   "Username" : "alice",
+    //   "Password" : "alicePassword",
+    //   "CertificateFile" : "client.crt",
+    //   "CertificateKeyFile" : "client.key",
+    //   "CertificateKeyPassword" : "certpass",
+    //   "Pkcs11" : false
+    // }
   },
 
   // Parameters of the HTTP proxy to be used by Orthanc. If set to the
@@ -177,7 +204,10 @@
   // Set the timeout for HTTP requests issued by Orthanc (in seconds).
   "HttpTimeout" : 10,
 
-  // Enable the verification of the peers during HTTPS requests.
+  // Enable the verification of the peers during HTTPS requests. This
+  // option must be set to "false" if using self-signed certificates.
+  // Pay attention that setting this option to "false" results in
+  // security risks!
   // Reference: http://curl.haxx.se/docs/sslcerts.html
   "HttpsVerifyPeers" : true,
 
@@ -270,7 +300,23 @@
   // (such as PatientName). By default, the search is
   // case-insensitive, which does not follow the DICOM standard.
   "CaseSensitivePN" : false,
+
+  // Configure PKCS#11 to use hardware security modules (HSM) and
+  // smart cards when carrying on HTTPS client authentication.
+  /**
+     "Pkcs11" : {
+       "Module" : "/usr/local/lib/libbeidpkcs11.so",
+       "Module" : "C:/Windows/System32/beidpkcs11.dll",
+       "Pin" : "1234",
+       "Verbose" : true
+     }
+   **/
   
+  // If set to "true", Orthanc will handle "SOP Classes in Study"
+  // (0008,0062) in C-FIND requests. This option is turned off by
+  // default, as it requires intensive accesses to the hard drive.
+  "AllowFindSopClassesInStudy" : false,
+
   // Register a new tag in the dictionary of DICOM tags that are known
   // to Orthanc. Each line must contain the tag (formatted as 2
   // hexadecimal numbers), the value representation (2 upcase

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # Orthanc - A Lightweight, RESTful DICOM Store
-# Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+# Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
 # Department, University Hospital of Liege, Belgium
 #
 # This program is free software: you can redistribute it and/or
@@ -30,7 +30,7 @@ parser = argparse.ArgumentParser(
     description = 'Automated classification of DICOM files from Orthanc.',
     formatter_class = argparse.ArgumentDefaultsHelpFormatter)
 
-parser.add_argument('--host', default = 'localhost',
+parser.add_argument('--host', default = '127.0.0.1',
                     help = 'The host address that runs Orthanc')
 parser.add_argument('--port', type = int, default = '8042',
                     help = 'The port number to which Orthanc is listening for the REST API')
@@ -45,7 +45,7 @@ parser.set_defaults(remove = False)
 
 
 def FixPath(p):
-    return p.encode('ascii', 'ignore').strip().decode()
+    return p.encode('ascii', errors = 'replace').translate(None, r"'\/:*?\"<>|!=").strip()
 
 def GetTag(resource, tag):
     if ('MainDicomTags' in resource and

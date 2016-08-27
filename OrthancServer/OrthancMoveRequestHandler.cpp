@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -52,14 +52,17 @@ namespace Orthanc
       std::vector<std::string> instances_;
       size_t position_;
       RemoteModalityParameters remote_;
+      uint16_t moveRequestID_;
 
     public:
       OrthancMoveRequestIterator(ServerContext& context,
                                  const std::string& aet,
-                                 const std::string& publicId) :
+                                 const std::string& publicId,
+                                 uint16_t moveRequestID) :
         context_(context),
         localAet_(context.GetDefaultLocalApplicationEntityTitle()),
-        position_(0)
+        position_(0),
+        moveRequestID_(moveRequestID)
       {
         LOG(INFO) << "Sending resource " << publicId << " to modality \"" << aet << "\"";
 
@@ -95,7 +98,7 @@ namespace Orthanc
         {
           ReusableDicomUserConnection::Locker locker
             (context_.GetReusableDicomUserConnection(), localAet_, remote_);
-          locker.GetConnection().Store(dicom);
+          locker.GetConnection().Store(dicom, moveRequestID_);
         }
 
         return Status_Success;
@@ -166,7 +169,8 @@ namespace Orthanc
                                                           const DicomMap& input,
                                                           const std::string& remoteIp,
                                                           const std::string& remoteAet,
-                                                          const std::string& calledAet)
+                                                          const std::string& calledAet,
+                                                          uint16_t messageId)
   {
     LOG(WARNING) << "Move-SCU request received for AET \"" << targetAet << "\"";
 
@@ -183,6 +187,35 @@ namespace Orthanc
       }
     }
 
+
+#if 0
+    /**
+     * Retrieve the Message ID (0000,0110) for this C-MOVE request, if
+     * any. If present, this Message ID will be stored in the Move
+     * Originator Message ID (0000,1031) field of the C-MOVE response.
+     * http://dicom.nema.org/medical/dicom/current/output/html/part07.html#sect_9.3.1
+     **/
+
+    static const DicomTag MESSAGE_ID(0x0000, 0x0110);
+    const DicomValue* messageIdTmp = input.TestAndGetValue(MESSAGE_ID);
+
+    messageId = 0;
+
+    if (messageIdTmp != NULL &&
+        !messageIdTmp->IsNull() &&
+        !messageIdTmp->IsBinary())
+    {
+      try
+      {
+        messageId = boost::lexical_cast<uint16_t>(messageIdTmp->GetContent());
+      }
+      catch (boost::bad_lexical_cast&)
+      {
+        LOG(WARNING) << "Cannot convert the Message ID (\"" << messageIdTmp ->GetContent()
+                     << "\") of an incoming C-MOVE request to an integer, assuming zero";
+      }
+    }
+#endif
 
 
     /**
@@ -208,7 +241,7 @@ namespace Orthanc
           LookupIdentifier(publicId, ResourceType_Study, input) ||
           LookupIdentifier(publicId, ResourceType_Patient, input))
       {
-        return new OrthancMoveRequestIterator(context_, targetAet, publicId);
+        return new OrthancMoveRequestIterator(context_, targetAet, publicId, messageId);
       }
       else
       {
@@ -229,7 +262,7 @@ namespace Orthanc
 
     if (LookupIdentifier(publicId, level, input))
     {
-      return new OrthancMoveRequestIterator(context_, targetAet, publicId);
+      return new OrthancMoveRequestIterator(context_, targetAet, publicId, messageId);
     }
     else
     {

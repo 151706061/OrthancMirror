@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -40,10 +40,6 @@ namespace Orthanc
 {
   Semaphore::Semaphore(unsigned int count) : count_(count)
   {
-    if (count == 0)
-    {
-      throw OrthancException(ErrorCode_ParameterOutOfRange);
-    }
   }
 
   void Semaphore::Release()

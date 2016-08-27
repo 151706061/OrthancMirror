@@ -327,12 +327,12 @@
   {
     "Code": 2003, 
     "Name": "HttpPortInUse", 
-    "Description": "The TCP port of the HTTP server is already in use"
+    "Description": "The TCP port of the HTTP server is privileged or already in use"
   },
   {
     "Code": 2004, 
     "Name": "DicomPortInUse", 
-    "Description": "The TCP port of the DICOM server is already in use"
+    "Description": "The TCP port of the DICOM server is privileged or already in use"
   },
   {
     "Code": 2005, 
@@ -518,5 +518,10 @@
     "Code": 2041, 
     "Name": "NoWorklistHandler", 
     "Description": "No request handler factory for DICOM C-Find Modality SCP"
+  },
+  {
+    "Code": 2042,
+    "Name": "AlreadyExistingTag",
+    "Description": "Cannot override the value of a tag that already exists"
   }
 ]

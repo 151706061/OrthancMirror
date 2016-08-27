@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -67,7 +67,7 @@
 #include <limits.h>      /* PATH_MAX */
 #endif
 
-#if defined(__linux) || defined(__FreeBSD_kernel__) || defined(__FreeBSD__)
+#if defined(__linux__) || defined(__FreeBSD_kernel__) || defined(__FreeBSD__)
 #include <limits.h>      /* PATH_MAX */
 #include <signal.h>
 #include <unistd.h>
@@ -111,27 +111,35 @@ extern "C"
 
 namespace Orthanc
 {
-  static bool finish;
+#if !defined(ORTHANC_SANDBOXED) || ORTHANC_SANDBOXED != 1
+  static bool finish_;
+  static ServerBarrierEvent barrierEvent_;
 
 #if defined(_WIN32)
   static BOOL WINAPI ConsoleControlHandler(DWORD dwCtrlType)
   {
     // http://msdn.microsoft.com/en-us/library/ms683242(v=vs.85).aspx
-    finish = true;
+    finish_ = true;
     return true;
   }
 #else
-  static void SignalHandler(int)
+  static void SignalHandler(int signal)
   {
-    finish = true;
+    if (signal == SIGHUP)
+    {
+      barrierEvent_ = ServerBarrierEvent_Reload;
+    }
+
+    finish_ = true;
   }
 #endif
+
 
   void Toolbox::USleep(uint64_t microSeconds)
   {
 #if defined(_WIN32)
     ::Sleep(static_cast<DWORD>(microSeconds / static_cast<uint64_t>(1000)));
-#elif defined(__linux) || defined(__APPLE__) || defined(__FreeBSD_kernel__) || defined(__FreeBSD__)
+#elif defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD_kernel__) || defined(__FreeBSD__)
     usleep(microSeconds);
 #else
 #error Support your platform here
@@ -139,7 +147,7 @@ namespace Orthanc
   }
 
 
-  static void ServerBarrierInternal(const bool* stopFlag)
+  static ServerBarrierEvent ServerBarrierInternal(const bool* stopFlag)
   {
 #if defined(_WIN32)
     SetConsoleCtrlHandler(ConsoleControlHandler, true);
@@ -147,11 +155,13 @@ namespace Orthanc
     signal(SIGINT, SignalHandler);
     signal(SIGQUIT, SignalHandler);
     signal(SIGTERM, SignalHandler);
+    signal(SIGHUP, SignalHandler);
 #endif
   
     // Active loop that awakens every 100ms
-    finish = false;
-    while (!(*stopFlag || finish))
+    finish_ = false;
+    barrierEvent_ = ServerBarrierEvent_Stop;
+    while (!(*stopFlag || finish_))
     {
       Toolbox::USleep(100 * 1000);
     }
@@ -162,20 +172,24 @@ namespace Orthanc
     signal(SIGINT, NULL);
     signal(SIGQUIT, NULL);
     signal(SIGTERM, NULL);
+    signal(SIGHUP, NULL);
 #endif
+
+    return barrierEvent_;
   }
 
 
-  void Toolbox::ServerBarrier(const bool& stopFlag)
+  ServerBarrierEvent Toolbox::ServerBarrier(const bool& stopFlag)
   {
-    ServerBarrierInternal(&stopFlag);
+    return ServerBarrierInternal(&stopFlag);
   }
 
-  void Toolbox::ServerBarrier()
+  ServerBarrierEvent Toolbox::ServerBarrier()
   {
     const bool stopFlag = false;
-    ServerBarrierInternal(&stopFlag);
+    return ServerBarrierInternal(&stopFlag);
   }
+#endif  /* ORTHANC_SANDBOXED */
 
 
   void Toolbox::ToUpperCase(std::string& s)
@@ -205,10 +219,22 @@ namespace Orthanc
   }
 
 
+  static std::streamsize GetStreamSize(std::istream& f)
+  {
+    // http://www.cplusplus.com/reference/iostream/istream/tellg/
+    f.seekg(0, std::ios::end);
+    std::streamsize size = f.tellg();
+    f.seekg(0, std::ios::beg);
+
+    return size;
+  }
+
+
+#if !defined(ORTHANC_SANDBOXED) || ORTHANC_SANDBOXED != 1
   void Toolbox::ReadFile(std::string& content,
                          const std::string& path) 
   {
-    if (!boost::filesystem::is_regular_file(path))
+    if (!IsRegularFile(path))
     {
       LOG(ERROR) << std::string("The path does not point to a regular file: ") << path;
       throw OrthancException(ErrorCode_RegularFileExpected);
@@ -221,11 +247,7 @@ namespace Orthanc
       throw OrthancException(ErrorCode_InexistentFile);
     }
 
-    // http://www.cplusplus.com/reference/iostream/istream/tellg/
-    f.seekg(0, std::ios::end);
-    std::streamsize size = f.tellg();
-    f.seekg(0, std::ios::beg);
-
+    std::streamsize size = GetStreamSize(f);
     content.resize(size);
     if (size != 0)
     {
@@ -234,8 +256,57 @@ namespace Orthanc
 
     f.close();
   }
+#endif
 
 
+#if !defined(ORTHANC_SANDBOXED) || ORTHANC_SANDBOXED != 1
+  bool Toolbox::ReadHeader(std::string& header,
+                           const std::string& path,
+                           size_t headerSize)
+  {
+    if (!IsRegularFile(path))
+    {
+      LOG(ERROR) << std::string("The path does not point to a regular file: ") << path;
+      throw OrthancException(ErrorCode_RegularFileExpected);
+    }
+
+    boost::filesystem::ifstream f;
+    f.open(path, std::ifstream::in | std::ifstream::binary);
+    if (!f.good())
+    {
+      throw OrthancException(ErrorCode_InexistentFile);
+    }
+
+    bool full = true;
+
+    {
+      std::streamsize size = GetStreamSize(f);
+      if (size <= 0)
+      {
+        headerSize = 0;
+        full = false;
+      }
+      else if (static_cast<size_t>(size) < headerSize)
+      {
+        headerSize = size;  // Truncate to the size of the file
+        full = false;
+      }
+    }
+
+    header.resize(headerSize);
+    if (headerSize != 0)
+    {
+      f.read(reinterpret_cast<char*>(&header[0]), headerSize);
+    }
+
+    f.close();
+
+    return full;
+  }
+#endif
+
+
+#if !defined(ORTHANC_SANDBOXED) || ORTHANC_SANDBOXED != 1
   void Toolbox::WriteFile(const void* content,
                           size_t size,
                           const std::string& path)
@@ -254,21 +325,25 @@ namespace Orthanc
 
     f.close();
   }
+#endif
 
 
+#if !defined(ORTHANC_SANDBOXED) || ORTHANC_SANDBOXED != 1
   void Toolbox::WriteFile(const std::string& content,
                           const std::string& path)
   {
     WriteFile(content.size() > 0 ? content.c_str() : NULL,
               content.size(), path);
   }
+#endif
 
 
+#if !defined(ORTHANC_SANDBOXED) || ORTHANC_SANDBOXED != 1
   void Toolbox::RemoveFile(const std::string& path)
   {
     if (boost::filesystem::exists(path))
     {
-      if (boost::filesystem::is_regular_file(path))
+      if (IsRegularFile(path))
       {
         boost::filesystem::remove(path);
       }
@@ -278,7 +353,7 @@ namespace Orthanc
       }
     }
   }
-
+#endif
 
 
   void Toolbox::SplitUriComponents(UriComponents& components,
@@ -449,6 +524,7 @@ namespace Orthanc
 
 
 
+#if !defined(ORTHANC_SANDBOXED) || ORTHANC_SANDBOXED != 1
   uint64_t Toolbox::GetFileSize(const std::string& path)
   {
     try
@@ -460,6 +536,7 @@ namespace Orthanc
       throw OrthancException(ErrorCode_InexistentFile);
     }
   }
+#endif
 
 
 #if !defined(ORTHANC_ENABLE_MD5) || ORTHANC_ENABLE_MD5 == 1
@@ -529,12 +606,24 @@ namespace Orthanc
   void Toolbox::DecodeBase64(std::string& result, 
                              const std::string& data)
   {
+    for (size_t i = 0; i < data.length(); i++)
+    {
+      if (!isalnum(data[i]) &&
+          data[i] != '+' &&
+          data[i] != '/' &&
+          data[i] != '=')
+      {
+        // This is not a valid character for a Base64 string
+        throw OrthancException(ErrorCode_BadFileFormat);
+      }
+    }
+
     result = base64_decode(data);
   }
 
 
 #  if BOOST_HAS_REGEX == 1
-  void Toolbox::DecodeDataUriScheme(std::string& mime,
+  bool Toolbox::DecodeDataUriScheme(std::string& mime,
                                     std::string& content,
                                     const std::string& source)
   {
@@ -546,10 +635,11 @@ namespace Orthanc
     {
       mime = what[1];
       DecodeBase64(content, what[2]);
+      return true;
     }
     else
     {
-      throw OrthancException(ErrorCode_BadFileFormat);
+      return false;
     }
   }
 #  endif
@@ -576,7 +666,7 @@ namespace Orthanc
     return std::string(&buffer[0]);
   }
 
-#elif defined(__linux) || defined(__FreeBSD_kernel__) || defined(__FreeBSD__)
+#elif defined(__linux__) || defined(__FreeBSD_kernel__) || defined(__FreeBSD__)
   static std::string GetPathToExecutableInternal()
   {
     std::vector<char> buffer(PATH_MAX + 1);
@@ -600,11 +690,15 @@ namespace Orthanc
     return std::string(pathbuf);
   }
 
+#elif defined(ORTHANC_SANDBOXED) && ORTHANC_SANDBOXED == 1
+  // Sandboxed Orthanc, no access to the executable
+
 #else
 #error Support your platform here
 #endif
 
 
+#if !defined(ORTHANC_SANDBOXED) || ORTHANC_SANDBOXED != 1
   std::string Toolbox::GetPathToExecutable()
   {
     boost::filesystem::path p(GetPathToExecutableInternal());
@@ -617,6 +711,7 @@ namespace Orthanc
     boost::filesystem::path p(GetPathToExecutableInternal());
     return boost::filesystem::absolute(p.parent_path()).string();
   }
+#endif
 
 
   static const char* GetBoostLocaleEncoding(const Encoding sourceEncoding)
@@ -1060,6 +1155,7 @@ namespace Orthanc
   }
 
 
+#if !defined(ORTHANC_SANDBOXED) || ORTHANC_SANDBOXED != 1
   void Toolbox::MakeDirectory(const std::string& path)
   {
     if (boost::filesystem::exists(path))
@@ -1077,12 +1173,15 @@ namespace Orthanc
       }
     }
   }
+#endif
 
 
+#if !defined(ORTHANC_SANDBOXED) || ORTHANC_SANDBOXED != 1
   bool Toolbox::IsExistingFile(const std::string& path)
   {
     return boost::filesystem::exists(path);
   }
+#endif
 
 
 #if ORTHANC_PUGIXML_ENABLED == 1
@@ -1207,6 +1306,7 @@ namespace Orthanc
 #endif
 
 
+#if !defined(ORTHANC_SANDBOXED) || ORTHANC_SANDBOXED != 1
   void Toolbox::ExecuteSystemCommand(const std::string& command,
                                      const std::vector<std::string>& arguments)
   {
@@ -1264,6 +1364,7 @@ namespace Orthanc
       throw OrthancException(ErrorCode_SystemCommand);
     }
   }
+#endif
 
   
   bool Toolbox::IsInteger(const std::string& str)
@@ -1382,5 +1483,194 @@ namespace Orthanc
     return static_cast<int>(getpid());
 #endif
   }
-}
 
+
+#if !defined(ORTHANC_SANDBOXED) || ORTHANC_SANDBOXED != 1
+  bool Toolbox::IsRegularFile(const std::string& path)
+  {
+    namespace fs = boost::filesystem;
+
+    try
+    {
+      if (fs::exists(path))
+      {
+        fs::file_status status = fs::status(path);
+        return (status.type() == boost::filesystem::regular_file ||
+                status.type() == boost::filesystem::reparse_file);   // Fix BitBucket issue #11
+      }
+    }
+    catch (fs::filesystem_error&)
+    {
+    }
+
+    return false;
+  }
+#endif
+
+
+  FILE* Toolbox::OpenFile(const std::string& path,
+                          FileMode mode)
+  {
+#if defined(_WIN32)
+    // TODO Deal with special characters by converting to the current locale
+#endif
+
+    const char* m;
+    switch (mode)
+    {
+      case FileMode_ReadBinary:
+        m = "rb";
+        break;
+
+      case FileMode_WriteBinary:
+        m = "wb";
+        break;
+
+      default:
+        throw OrthancException(ErrorCode_ParameterOutOfRange);
+    }
+
+    return fopen(path.c_str(), m);
+  }
+
+  
+
+  static bool IsUnreservedCharacter(char c)
+  {
+    // This function checks whether "c" is an unserved character
+    // wrt. an URI percent-encoding
+    // https://en.wikipedia.org/wiki/Percent-encoding#Percent-encoding%5Fin%5Fa%5FURI
+
+    return ((c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' ||
+            c == '_' ||
+            c == '.' ||
+            c == '~');
+  }
+
+  void Toolbox::UriEncode(std::string& target,
+                          const std::string& source)
+  {
+    // Estimate the length of the percent-encoded URI
+    size_t length = 0;
+
+    for (size_t i = 0; i < source.size(); i++)
+    {
+      if (IsUnreservedCharacter(source[i]))
+      {
+        length += 1;
+      }
+      else
+      {
+        // This character must be percent-encoded
+        length += 3;
+      }
+    }
+
+    target.clear();
+    target.reserve(length);
+
+    for (size_t i = 0; i < source.size(); i++)
+    {
+      if (IsUnreservedCharacter(source[i]))
+      {
+        target.push_back(source[i]);
+      }
+      else
+      {
+        // This character must be percent-encoded
+        uint8_t byte = static_cast<uint8_t>(source[i]);
+        uint8_t a = byte >> 4;
+        uint8_t b = byte & 0x0f;
+
+        target.push_back('%');
+        target.push_back(a < 10 ? a + '0' : a - 10 + 'A');
+        target.push_back(b < 10 ? b + '0' : b - 10 + 'A');
+      }
+    }
+  }
+
+
+  static bool HasField(const Json::Value& json,
+                       const std::string& key,
+                       Json::ValueType expectedType)
+  {
+    if (json.type() != Json::objectValue ||
+        !json.isMember(key))
+    {
+      return false;
+    }
+    else if (json[key].type() == expectedType)
+    {
+      return true;
+    }
+    else
+    {
+      throw OrthancException(ErrorCode_BadParameterType);
+    }
+  }
+
+
+  std::string Toolbox::GetJsonStringField(const Json::Value& json,
+                                          const std::string& key,
+                                          const std::string& defaultValue)
+  {
+    if (HasField(json, key, Json::stringValue))
+    {
+      return json[key].asString();
+    }
+    else
+    {
+      return defaultValue;
+    }
+  }
+
+
+  bool Toolbox::GetJsonBooleanField(const ::Json::Value& json,
+                                    const std::string& key,
+                                    bool defaultValue)
+  {
+    if (HasField(json, key, Json::booleanValue))
+    {
+      return json[key].asBool();
+    }
+    else
+    {
+      return defaultValue;
+    }
+  }
+
+
+  int Toolbox::GetJsonIntegerField(const ::Json::Value& json,
+                                   const std::string& key,
+                                   int defaultValue)
+  {
+    if (HasField(json, key, Json::intValue))
+    {
+      return json[key].asInt();
+    }
+    else
+    {
+      return defaultValue;
+    }
+  }
+
+
+  unsigned int Toolbox::GetJsonUnsignedIntegerField(const ::Json::Value& json,
+                                                    const std::string& key,
+                                                    unsigned int defaultValue)
+  {
+    int v = GetJsonIntegerField(json, key, defaultValue);
+
+    if (v < 0)
+    {
+      throw OrthancException(ErrorCode_ParameterOutOfRange);
+    }
+    else
+    {
+      return static_cast<unsigned int>(v);
+    }
+  }
+}

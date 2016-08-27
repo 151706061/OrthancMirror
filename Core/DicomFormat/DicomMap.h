@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -102,16 +102,18 @@ namespace Orthanc
     }
 
     void SetValue(const DicomTag& tag,
-                  const std::string& str)
+                  const std::string& str,
+                  bool isBinary)
     {
-      SetValue(tag, new DicomValue(str, false));
+      SetValue(tag, new DicomValue(str, isBinary));
     }
 
     void SetValue(uint16_t group, 
                   uint16_t element, 
-                  const std::string& str)
+                  const std::string& str,
+                  bool isBinary)
     {
-      SetValue(group, element, new DicomValue(str, false));
+      SetValue(group, element, new DicomValue(str, isBinary));
     }
 
     bool HasTag(uint16_t group, uint16_t element) const
@@ -169,12 +171,14 @@ namespace Orthanc
 
     static void GetMainDicomTags(std::set<DicomTag>& result);
 
-    void Print(FILE* fp) const;
-
     void GetTags(std::set<DicomTag>& tags) const;
 
     static void LoadMainDicomTags(const DicomTag*& tags,
                                   size_t& size,
                                   ResourceType level);
+
+    static bool ParseDicomMetaInformation(DicomMap& result,
+                                          const char* dicom,
+                                          size_t size);
   };
 }

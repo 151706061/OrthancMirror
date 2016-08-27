@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -33,7 +33,6 @@
 #include "PrecompiledHeadersServer.h"
 #include "OrthancRestApi/OrthancRestApi.h"
 
-#include <fstream>
 #include <boost/algorithm/string/predicate.hpp>
 
 #include "../Core/Logging.h"
@@ -112,8 +111,8 @@ public:
   {
     std::auto_ptr<OrthancFindRequestHandler> result(new OrthancFindRequestHandler(context_));
 
-    result->SetMaxResults(Configuration::GetGlobalIntegerParameter("LimitFindResults", 0));
-    result->SetMaxInstances(Configuration::GetGlobalIntegerParameter("LimitFindInstances", 0));
+    result->SetMaxResults(Configuration::GetGlobalUnsignedIntegerParameter("LimitFindResults", 0));
+    result->SetMaxInstances(Configuration::GetGlobalUnsignedIntegerParameter("LimitFindInstances", 0));
 
     if (result->GetMaxResults() == 0)
     {
@@ -278,17 +277,28 @@ class MyIncomingHttpRequestFilter : public IIncomingHttpRequestFilter
 {
 private:
   ServerContext& context_;
+  OrthancPlugins*  plugins_;
 
 public:
-  MyIncomingHttpRequestFilter(ServerContext& context) : context_(context)
+  MyIncomingHttpRequestFilter(ServerContext& context,
+                              OrthancPlugins* plugins) : 
+    context_(context),
+    plugins_(plugins)
   {
   }
 
   virtual bool IsAllowed(HttpMethod method,
                          const char* uri,
                          const char* ip,
-                         const char* username) const
+                         const char* username,
+                         const IHttpHandler::Arguments& httpHeaders) const
   {
+    if (plugins_ != NULL &&
+        !plugins_->IsAllowed(method, uri, ip, username, httpHeaders))
+    {
+      return false;
+    }
+
     static const char* HTTP_FILTER = "IncomingHttpRequestFilter";
 
     LuaScripting::Locker locker(context_.GetLua());
@@ -323,6 +333,7 @@ public:
       call.PushString(uri);
       call.PushString(ip);
       call.PushString(username);
+      call.PushStringMap(httpHeaders);
 
       if (!call.ExecutePredicate())
       {
@@ -431,7 +442,9 @@ static void PrintHelp(const char* path)
     << "Command-line options:" << std::endl
     << "  --help\t\tdisplay this help and exit" << std::endl
     << "  --logdir=[dir]\tdirectory where to store the log files" << std::endl
-    << "\t\t\t(if not used, the logs are dumped to stderr)" << std::endl
+    << "\t\t\t(by default, the log is dumped to stderr)" << std::endl
+    << "  --logfile=[file]\tfile where to store the log of Orthanc" << std::endl
+    << "\t\t\t(by default, the log is dumped to stderr)" << std::endl
     << "  --config=[file]\tcreate a sample configuration file and exit" << std::endl
     << "  --errors\t\tprint the supported error codes and exit" << std::endl
     << "  --verbose\t\tbe verbose in logs" << std::endl
@@ -456,7 +469,7 @@ static void PrintVersion(const char* path)
 {
   std::cout
     << path << " " << ORTHANC_VERSION << std::endl
-    << "Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics Department, University Hospital of Liege (Belgium)" << std::endl
+    << "Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics Department, University Hospital of Liege (Belgium)" << std::endl
     << "Licensing GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>, with OpenSSL exception." << std::endl
     << "This is free software: you are free to change and redistribute it." << std::endl
     << "There is NO WARRANTY, to the extent permitted by law." << std::endl
@@ -541,8 +554,8 @@ static void PrintErrors(const char* path)
     PrintErrorCode(ErrorCode_DirectoryOverFile, "The directory to be created is already occupied by a regular file");
     PrintErrorCode(ErrorCode_FileStorageCannotWrite, "Unable to create a subdirectory or a file in the file storage");
     PrintErrorCode(ErrorCode_DirectoryExpected, "The specified path does not point to a directory");
-    PrintErrorCode(ErrorCode_HttpPortInUse, "The TCP port of the HTTP server is already in use");
-    PrintErrorCode(ErrorCode_DicomPortInUse, "The TCP port of the DICOM server is already in use");
+    PrintErrorCode(ErrorCode_HttpPortInUse, "The TCP port of the HTTP server is privileged or already in use");
+    PrintErrorCode(ErrorCode_DicomPortInUse, "The TCP port of the DICOM server is privileged or already in use");
     PrintErrorCode(ErrorCode_BadHttpStatusInRest, "This HTTP status is not allowed in a REST API");
     PrintErrorCode(ErrorCode_RegularFileExpected, "The specified path does not point to a regular file");
     PrintErrorCode(ErrorCode_PathToExecutable, "Unable to get the path to the executable");
@@ -580,6 +593,7 @@ static void PrintErrors(const char* path)
     PrintErrorCode(ErrorCode_SslDisabled, "Orthanc has been built without SSL support");
     PrintErrorCode(ErrorCode_CannotOrderSlices, "Unable to order the slices of the series");
     PrintErrorCode(ErrorCode_NoWorklistHandler, "No request handler factory for DICOM C-Find Modality SCP");
+    PrintErrorCode(ErrorCode_AlreadyExistingTag, "Cannot override the value of a tag that already exists");
   }
 
   std::cout << std::endl;
@@ -638,8 +652,37 @@ static bool WaitForExit(ServerContext& context,
 
   context.GetLua().Execute("Initialize");
 
-  Toolbox::ServerBarrier(restApi.LeaveBarrierFlag());
-  bool restart = restApi.IsResetRequestReceived();
+  bool restart;
+
+  for (;;)
+  {
+    ServerBarrierEvent event = Toolbox::ServerBarrier(restApi.LeaveBarrierFlag());
+    restart = restApi.IsResetRequestReceived();
+
+    if (!restart && 
+        event == ServerBarrierEvent_Reload)
+    {
+      // Handling of SIGHUP
+
+      if (Configuration::HasConfigurationChanged())
+      {
+        LOG(WARNING) << "A SIGHUP signal has been received, resetting Orthanc";
+        Logging::Flush();
+        restart = true;
+        break;
+      }
+      else
+      {
+        LOG(WARNING) << "A SIGHUP signal has been received, but is ignored as the configuration has not changed";
+        Logging::Flush();
+        continue;
+      }
+    }
+    else
+    {
+      break;
+    }
+  }
 
   context.GetLua().Execute("Finalize");
 
@@ -677,9 +720,9 @@ static bool StartHttpServer(ServerContext& context,
   
 
   // HTTP server
-  MyIncomingHttpRequestFilter httpFilter(context);
+  MyIncomingHttpRequestFilter httpFilter(context, plugins);
   MongooseServer httpServer;
-  httpServer.SetPortNumber(Configuration::GetGlobalIntegerParameter("HttpPort", 8042));
+  httpServer.SetPortNumber(Configuration::GetGlobalUnsignedIntegerParameter("HttpPort", 8042));
   httpServer.SetRemoteAccessAllowed(Configuration::GetGlobalBoolParameter("RemoteAccessAllowed", false));
   httpServer.SetKeepAliveEnabled(Configuration::GetGlobalBoolParameter("KeepAlive", false));
   httpServer.SetHttpCompressionEnabled(Configuration::GetGlobalBoolParameter("HttpCompressionEnabled", true));
@@ -702,6 +745,13 @@ static bool StartHttpServer(ServerContext& context,
   }
 
   httpServer.Register(context.GetHttpHandler());
+
+  if (httpServer.GetPortNumber() < 1024)
+  {
+    LOG(WARNING) << "The HTTP port is privileged (" 
+                 << httpServer.GetPortNumber() << " is below 1024), "
+                 << "make sure you run Orthanc as root/administrator";
+  }
 
   httpServer.Start();
   LOG(WARNING) << "HTTP server listening on port: " << httpServer.GetPortNumber();
@@ -734,24 +784,45 @@ static bool StartDicomServer(ServerContext& context,
   dicomServer.SetStoreRequestHandlerFactory(serverFactory);
   dicomServer.SetMoveRequestHandlerFactory(serverFactory);
   dicomServer.SetFindRequestHandlerFactory(serverFactory);
+  dicomServer.SetAssociationTimeout(Configuration::GetGlobalUnsignedIntegerParameter("DicomScpTimeout", 30));
+
 
 #if ORTHANC_PLUGINS_ENABLED == 1
-  if (plugins &&
-      plugins->HasWorklistHandler())
+  if (plugins != NULL)
   {
-    dicomServer.SetWorklistRequestHandlerFactory(*plugins);
+    if (plugins->HasWorklistHandler())
+    {
+      dicomServer.SetWorklistRequestHandlerFactory(*plugins);
+    }
+
+    if (plugins->HasFindHandler())
+    {
+      dicomServer.SetFindRequestHandlerFactory(*plugins);
+    }
+
+    if (plugins->HasMoveHandler())
+    {
+      dicomServer.SetMoveRequestHandlerFactory(*plugins);
+    }
   }
 #endif
 
-  dicomServer.SetPortNumber(Configuration::GetGlobalIntegerParameter("DicomPort", 4242));
+  dicomServer.SetPortNumber(Configuration::GetGlobalUnsignedIntegerParameter("DicomPort", 4242));
   dicomServer.SetApplicationEntityTitle(Configuration::GetGlobalStringParameter("DicomAet", "ORTHANC"));
   dicomServer.SetApplicationEntityFilter(dicomFilter);
+
+  if (dicomServer.GetPortNumber() < 1024)
+  {
+    LOG(WARNING) << "The DICOM port is privileged (" 
+                 << dicomServer.GetPortNumber() << " is below 1024), "
+                 << "make sure you run Orthanc as root/administrator";
+  }
 
   dicomServer.Start();
   LOG(WARNING) << "DICOM server listening with AET " << dicomServer.GetApplicationEntityTitle() 
                << " on port: " << dicomServer.GetPortNumber();
 
-  bool restart;
+  bool restart = false;
   ErrorCode error = ErrorCode_Success;
 
   try
@@ -865,13 +936,19 @@ static bool ConfigureServerContext(IDatabaseWrapper& database,
 {
   ServerContext context(database, storageArea);
 
-  HttpClient::SetDefaultTimeout(Configuration::GetGlobalIntegerParameter("HttpTimeout", 0));
+  HttpClient::ConfigureSsl(Configuration::GetGlobalBoolParameter("HttpsVerifyPeers", true),
+                           Configuration::GetGlobalStringParameter("HttpsCACertificates", ""));
+  HttpClient::SetDefaultTimeout(Configuration::GetGlobalUnsignedIntegerParameter("HttpTimeout", 0));
+  HttpClient::SetDefaultProxy(Configuration::GetGlobalStringParameter("HttpProxy", ""));
+
+  DicomUserConnection::SetDefaultTimeout(Configuration::GetGlobalUnsignedIntegerParameter("DicomScuTimeout", 10));
+
   context.SetCompressionEnabled(Configuration::GetGlobalBoolParameter("StorageCompression", false));
   context.SetStoreMD5ForAttachments(Configuration::GetGlobalBoolParameter("StoreMD5ForAttachments", true));
 
   try
   {
-    context.GetIndex().SetMaximumPatientCount(Configuration::GetGlobalIntegerParameter("MaximumPatientCount", 0));
+    context.GetIndex().SetMaximumPatientCount(Configuration::GetGlobalUnsignedIntegerParameter("MaximumPatientCount", 0));
   }
   catch (...)
   {
@@ -880,7 +957,7 @@ static bool ConfigureServerContext(IDatabaseWrapper& database,
 
   try
   {
-    uint64_t size = Configuration::GetGlobalIntegerParameter("MaximumStorageSize", 0);
+    uint64_t size = Configuration::GetGlobalUnsignedIntegerParameter("MaximumStorageSize", 0);
     context.GetIndex().SetMaximumStorageSize(size * 1024 * 1024);
   }
   catch (...)
@@ -898,7 +975,7 @@ static bool ConfigureServerContext(IDatabaseWrapper& database,
   }
 #endif
 
-  bool restart;
+  bool restart = false;
   ErrorCode error = ErrorCode_Success;
 
   try
@@ -915,6 +992,7 @@ static bool ConfigureServerContext(IDatabaseWrapper& database,
 #if ORTHANC_PLUGINS_ENABLED == 1
   if (plugins)
   {
+    plugins->ResetServerContext();
     context.ResetPlugins();
   }
 #endif
@@ -1039,6 +1117,8 @@ int main(int argc, char* argv[])
       {
         // Use the first argument that does not start with a "-" as
         // the configuration file
+
+        // TODO WHAT IS THE ENCODING?
         configurationFile = argv[i];
       }
     }
@@ -1067,6 +1147,7 @@ int main(int argc, char* argv[])
     }
     else if (boost::starts_with(argument, "--logdir="))
     {
+      // TODO WHAT IS THE ENCODING?
       std::string directory = argument.substr(9);
 
       try
@@ -1080,12 +1161,29 @@ int main(int argc, char* argv[])
         return -1;
       }
     }
+    else if (boost::starts_with(argument, "--logfile="))
+    {
+      // TODO WHAT IS THE ENCODING?
+      std::string file = argument.substr(10);
+
+      try
+      {
+        Logging::SetTargetFile(file);
+      }
+      catch (OrthancException&)
+      {
+        LOG(ERROR) << "Cannot write to the specified log file (" 
+                   << file << "), aborting.";
+        return -1;
+      }
+    }
     else if (argument == "--upgrade")
     {
       allowDatabaseUpgrade = true;
     }
     else if (boost::starts_with(argument, "--config="))
     {
+      // TODO WHAT IS THE ENCODING?
       std::string configurationSample;
       GetFileResource(configurationSample, EmbeddedResources::CONFIGURATION_SAMPLE);
 
@@ -1136,27 +1234,12 @@ int main(int argc, char* argv[])
     {
       OrthancInitialize(configurationFile);
 
-      if (0)
-      {
-        // TODO REMOVE THIS TEST
-        DicomUserConnection c;
-        c.SetRemoteHost("localhost");
-        c.SetRemotePort(4243);
-        c.SetRemoteApplicationEntityTitle("ORTHANCTEST");
-        c.Open();
-        ParsedDicomFile f(false);
-        f.Replace(DICOM_TAG_PATIENT_NAME, "M*");
-        DicomFindAnswers a;
-        c.FindWorklist(a, f);
-        Json::Value j;
-        a.ToJson(j, true);
-        std::cout << j;
-      }
-
       bool restart = StartOrthanc(argc, argv, allowDatabaseUpgrade);
       if (restart)
       {
         OrthancFinalize();
+        LOG(WARNING) << "Logging system is resetting";
+        Logging::Reset();
       }
       else
       {

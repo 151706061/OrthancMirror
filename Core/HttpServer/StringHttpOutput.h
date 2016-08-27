@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -41,16 +41,18 @@ namespace Orthanc
   class StringHttpOutput : public IHttpOutputStream
   {
   private:
+    bool          found_;
     ChunkedBuffer buffer_;
 
   public:
+    StringHttpOutput() : found_(false)
+    {
+    }
+
     virtual void OnHttpStatusReceived(HttpStatus status);
 
     virtual void Send(bool isHeader, const void* buffer, size_t length);
 
-    void GetOutput(std::string& output)
-    {
-      buffer_.Flatten(output);
-    }
+    void GetOutput(std::string& output);
   };
 }

@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -480,7 +480,8 @@ namespace Orthanc
       }
       else
       {
-        dicom.Replace(tag, value);
+        // This is V1, don't try and decode data URI scheme
+        dicom.ReplacePlainString(tag, value);
       }
     }
   }
@@ -526,7 +527,7 @@ namespace Orthanc
         }
         else
         {
-          dicom.Replace(tag, tags[name], decodeBinaryTags);
+          dicom.Replace(tag, tags[name], decodeBinaryTags, DicomReplaceMode_InsertIfAbsent);
         }
       }
     }
@@ -542,8 +543,8 @@ namespace Orthanc
     assert(content.size() > 0);
     ServerContext& context = OrthancRestApi::GetContext(call);
 
-    base.Replace(DICOM_TAG_IMAGES_IN_ACQUISITION, boost::lexical_cast<std::string>(content.size()));
-    base.Replace(DICOM_TAG_NUMBER_OF_TEMPORAL_POSITIONS, "1");
+    base.ReplacePlainString(DICOM_TAG_IMAGES_IN_ACQUISITION, boost::lexical_cast<std::string>(content.size()));
+    base.ReplacePlainString(DICOM_TAG_NUMBER_OF_TEMPORAL_POSITIONS, "1");
 
     std::string someInstance;
 
@@ -580,8 +581,8 @@ namespace Orthanc
         }
 
         dicom->EmbedContent(payload->asString());
-        dicom->Replace(DICOM_TAG_INSTANCE_NUMBER, boost::lexical_cast<std::string>(i + 1));
-        dicom->Replace(DICOM_TAG_IMAGE_INDEX, boost::lexical_cast<std::string>(i + 1));
+        dicom->ReplacePlainString(DICOM_TAG_INSTANCE_NUMBER, boost::lexical_cast<std::string>(i + 1));
+        dicom->ReplacePlainString(DICOM_TAG_IMAGE_INDEX, boost::lexical_cast<std::string>(i + 1));
 
         StoreCreatedInstance(someInstance, call, *dicom);
       }
@@ -636,8 +637,7 @@ namespace Orthanc
       }
       else
       {
-        std::string tmp = Configuration::GetGlobalStringParameter("DefaultEncoding", "Latin1");
-        encoding = StringToEncoding(tmp.c_str());
+        encoding = Configuration::GetDefaultEncoding();
       }
 
       dicom.SetEncoding(encoding);
@@ -731,12 +731,12 @@ namespace Orthanc
           const Json::Value& tag = siblingTags[t];
           if (tag["Type"] == "Null")
           {
-            dicom.Replace(*it, "");
+            dicom.ReplacePlainString(*it, "");
           }
           else if (tag["Type"] == "String")
           {
             std::string value = tag["Value"].asString();
-            dicom.Replace(*it, Toolbox::ConvertFromUtf8(value, dicom.GetEncoding()));
+            dicom.ReplacePlainString(*it, Toolbox::ConvertFromUtf8(value, dicom.GetEncoding()));
           }
         }
       }
@@ -759,26 +759,26 @@ namespace Orthanc
     // Inject time-related information
     std::string date, time;
     Toolbox::GetNowDicom(date, time);
-    dicom.Replace(DICOM_TAG_ACQUISITION_DATE, date);
-    dicom.Replace(DICOM_TAG_ACQUISITION_TIME, time);
-    dicom.Replace(DICOM_TAG_CONTENT_DATE, date);
-    dicom.Replace(DICOM_TAG_CONTENT_TIME, time);
-    dicom.Replace(DICOM_TAG_INSTANCE_CREATION_DATE, date);
-    dicom.Replace(DICOM_TAG_INSTANCE_CREATION_TIME, time);
+    dicom.ReplacePlainString(DICOM_TAG_ACQUISITION_DATE, date);
+    dicom.ReplacePlainString(DICOM_TAG_ACQUISITION_TIME, time);
+    dicom.ReplacePlainString(DICOM_TAG_CONTENT_DATE, date);
+    dicom.ReplacePlainString(DICOM_TAG_CONTENT_TIME, time);
+    dicom.ReplacePlainString(DICOM_TAG_INSTANCE_CREATION_DATE, date);
+    dicom.ReplacePlainString(DICOM_TAG_INSTANCE_CREATION_TIME, time);
 
     if (parentType == ResourceType_Patient ||
         parentType == ResourceType_Study ||
         parentType == ResourceType_Instance /* no parent */)
     {
-      dicom.Replace(DICOM_TAG_SERIES_DATE, date);
-      dicom.Replace(DICOM_TAG_SERIES_TIME, time);
+      dicom.ReplacePlainString(DICOM_TAG_SERIES_DATE, date);
+      dicom.ReplacePlainString(DICOM_TAG_SERIES_TIME, time);
     }
 
     if (parentType == ResourceType_Patient ||
         parentType == ResourceType_Instance /* no parent */)
     {
-      dicom.Replace(DICOM_TAG_STUDY_DATE, date);
-      dicom.Replace(DICOM_TAG_STUDY_TIME, time);
+      dicom.ReplacePlainString(DICOM_TAG_STUDY_DATE, date);
+      dicom.ReplacePlainString(DICOM_TAG_STUDY_TIME, time);
     }
 
 

@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -39,10 +39,13 @@
 #include <vector>
 #include <stdint.h>
 #include <boost/shared_ptr.hpp>
+#include <boost/noncopyable.hpp>
 
 namespace Orthanc
 {
-  class PngReader : public ImageAccessor
+  class PngReader : 
+    public ImageAccessor, 
+    public boost::noncopyable
   {
   private:
     struct PngRabi;
@@ -56,12 +59,7 @@ namespace Orthanc
   public:
     PngReader();
 
-    void ReadFromFile(const char* filename);
-
-    void ReadFromFile(const std::string& filename)
-    {
-      ReadFromFile(filename.c_str());
-    }
+    void ReadFromFile(const std::string& filename);
 
     void ReadFromMemory(const void* buffer,
                         size_t size);

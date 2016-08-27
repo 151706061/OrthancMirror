@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -291,8 +291,7 @@ namespace Orthanc
 			      const char* message,
 			      size_t messageSize)
   {
-    if (status == HttpStatus_200_Ok ||
-        status == HttpStatus_301_MovedPermanently ||
+    if (status == HttpStatus_301_MovedPermanently ||
         status == HttpStatus_401_Unauthorized ||
         status == HttpStatus_405_MethodNotAllowed)
     {
@@ -300,7 +299,6 @@ namespace Orthanc
       throw OrthancException(ErrorCode_ParameterOutOfRange);
     }
     
-    stateMachine_.ClearHeaders();
     stateMachine_.SetHttpStatus(status);
     stateMachine_.SendBody(message, messageSize);
   }

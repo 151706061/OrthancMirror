@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -32,15 +32,29 @@
 
 #pragma once
 
-#include "ImageAccessor.h"
+#include "IImageWriter.h"
 
 #include <boost/shared_ptr.hpp>
-#include <string>
 
 namespace Orthanc
 {
-  class PngWriter
+  class PngWriter : public IImageWriter
   {
+  protected:
+    virtual void WriteToFileInternal(const std::string& filename,
+                                     unsigned int width,
+                                     unsigned int height,
+                                     unsigned int pitch,
+                                     PixelFormat format,
+                                     const void* buffer);
+
+    virtual void WriteToMemoryInternal(std::string& png,
+                                       unsigned int width,
+                                       unsigned int height,
+                                       unsigned int pitch,
+                                       PixelFormat format,
+                                       const void* buffer);
+
   private:
     struct PImpl;
     boost::shared_ptr<PImpl> pimpl_;
@@ -60,33 +74,5 @@ namespace Orthanc
     PngWriter();
 
     ~PngWriter();
-
-    void WriteToFile(const char* filename,
-                     unsigned int width,
-                     unsigned int height,
-                     unsigned int pitch,
-                     PixelFormat format,
-                     const void* buffer);
-
-    void WriteToMemory(std::string& png,
-                       unsigned int width,
-                       unsigned int height,
-                       unsigned int pitch,
-                       PixelFormat format,
-                       const void* buffer);
-
-    void WriteToFile(const char* filename,
-                     const ImageAccessor& accessor)
-    {
-      WriteToFile(filename, accessor.GetWidth(), accessor.GetHeight(),
-                  accessor.GetPitch(), accessor.GetFormat(), accessor.GetConstBuffer());
-    }
-
-    void WriteToMemory(std::string& png,
-                       const ImageAccessor& accessor)
-    {
-      WriteToMemory(png, accessor.GetWidth(), accessor.GetHeight(),
-                    accessor.GetPitch(), accessor.GetFormat(), accessor.GetConstBuffer());
-    }
   };
 }

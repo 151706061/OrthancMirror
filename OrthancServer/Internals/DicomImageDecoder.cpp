@@ -1,6 +1,6 @@
 /**
  * Orthanc - A Lightweight, RESTful DICOM Store
- * Copyright (C) 2012-2015 Sebastien Jodogne, Medical Physics
+ * Copyright (C) 2012-2016 Sebastien Jodogne, Medical Physics
  * Department, University Hospital of Liege, Belgium
  *
  * This program is free software: you can redistribute it and/or
@@ -76,29 +76,49 @@
   =========================================================================*/
 
 
-
-#include "../PrecompiledHeadersServer.h"
-#include "DicomImageDecoder.h"
-
 #include "../../Core/Logging.h"
 #include "../../Core/OrthancException.h"
 #include "../../Core/Images/Image.h"
 #include "../../Core/Images/ImageProcessing.h"
+#include "../../Core/Images/PngWriter.h"
+#include "../../Core/Images/JpegWriter.h"
 #include "../../Core/DicomFormat/DicomIntegerPixelAccessor.h"
 #include "../ToDcmtkBridge.h"
 #include "../FromDcmtkBridge.h"
 #include "../ParsedDicomFile.h"
+#include "../OrthancInitialization.h"
 
 #include <boost/lexical_cast.hpp>
 
 #include <dcmtk/dcmdata/dcfilefo.h>
+#include <dcmtk/dcmdata/dcrleccd.h>
+#include <dcmtk/dcmdata/dcrlecp.h>
 
 #if ORTHANC_JPEG_LOSSLESS_ENABLED == 1
-#include <dcmtk/dcmjpls/djcodecd.h>
-#include <dcmtk/dcmjpls/djcparam.h>
-#include <dcmtk/dcmjpeg/djrplol.h>
+#  include <dcmtk/dcmjpls/djcodecd.h>
+#  include <dcmtk/dcmjpls/djcparam.h>
+#  include <dcmtk/dcmjpeg/djrplol.h>
 #endif
 
+#if ORTHANC_JPEG_ENABLED == 1
+#  include <dcmtk/dcmjpeg/djcodecd.h>
+#  include <dcmtk/dcmjpeg/djcparam.h>
+#  include <dcmtk/dcmjpeg/djdecbas.h>
+#  include <dcmtk/dcmjpeg/djdecext.h>
+#  include <dcmtk/dcmjpeg/djdeclol.h>
+#  include <dcmtk/dcmjpeg/djdecpro.h>
+#  include <dcmtk/dcmjpeg/djdecsps.h>
+#  include <dcmtk/dcmjpeg/djdecsv1.h>
+#endif
+
+#if DCMTK_VERSION_NUMBER <= 360
+#  define EXS_JPEGProcess1      EXS_JPEGProcess1TransferSyntax
+#  define EXS_JPEGProcess2_4    EXS_JPEGProcess2_4TransferSyntax
+#  define EXS_JPEGProcess6_8    EXS_JPEGProcess6_8TransferSyntax
+#  define EXS_JPEGProcess10_12  EXS_JPEGProcess10_12TransferSyntax
+#  define EXS_JPEGProcess14     EXS_JPEGProcess14TransferSyntax
+#  define EXS_JPEGProcess14SV1  EXS_JPEGProcess14SV1TransferSyntax
+#endif
 
 namespace Orthanc
 {
@@ -106,15 +126,7 @@ namespace Orthanc
   static const DicomTag DICOM_TAG_COMPRESSION_TYPE(0x07a1, 0x1011);
 
 
-  static bool IsJpegLossless(const DcmDataset& dataset)
-  {
-    // http://support.dcmtk.org/docs/dcxfer_8h-source.html
-    return (dataset.getOriginalXfer() == EXS_JPEGLSLossless ||
-            dataset.getOriginalXfer() == EXS_JPEGLSLossy);
-  }
-
-
-  static bool IsPsmctRle1(DcmDataset& dataset)
+  bool DicomImageDecoder::IsPsmctRle1(DcmDataset& dataset)
   {
     DcmElement* e;
     char* c;
@@ -137,8 +149,8 @@ namespace Orthanc
   }
 
 
-  static bool DecodePsmctRle1(std::string& output,
-                              DcmDataset& dataset)
+  bool DicomImageDecoder::DecodePsmctRle1(std::string& output,
+                                          DcmDataset& dataset)
   {
     // Check whether the DICOM instance contains an image encoded with
     // the PMSCT_RLE1 scheme.
@@ -238,7 +250,8 @@ namespace Orthanc
       // See also: http://support.dcmtk.org/wiki/dcmtk/howto/accessing-compressed-data
 
       DicomMap m;
-      FromDcmtkBridge::Convert(m, dataset);
+      FromDcmtkBridge::Convert(m, dataset, ORTHANC_MAXIMUM_TAG_LENGTH,
+                               Configuration::GetDefaultEncoding());
 
       /**
        * Create an accessor to the raw values of the DICOM image.
@@ -306,15 +319,17 @@ namespace Orthanc
   };
 
 
-  ImageAccessor* DicomImageDecoder::CreateImage(DcmDataset& dataset)
+  ImageAccessor* DicomImageDecoder::CreateImage(DcmDataset& dataset,
+                                                bool ignorePhotometricInterpretation)
   {
     DicomMap m;
-    FromDcmtkBridge::Convert(m, dataset);
+    FromDcmtkBridge::Convert(m, dataset, ORTHANC_MAXIMUM_TAG_LENGTH,
+                             Configuration::GetDefaultEncoding());
 
     DicomImageInformation info(m);
     PixelFormat format;
     
-    if (!info.ExtractPixelFormat(format))
+    if (!info.ExtractPixelFormat(format, ignorePhotometricInterpretation))
     {
       LOG(WARNING) << "Unsupported DICOM image: " << info.GetBitsStored() 
                    << "bpp, " << info.GetChannelCount() << " channels, " 
@@ -326,17 +341,6 @@ namespace Orthanc
     }
 
     return new Image(format, info.GetWidth(), info.GetHeight());
-  }
-
-
-  bool DicomImageDecoder::IsUncompressedImage(const DcmDataset& dataset)
-  {
-    // http://support.dcmtk.org/docs/dcxfer_8h-source.html
-    return (dataset.getOriginalXfer() == EXS_Unknown ||
-            dataset.getOriginalXfer() == EXS_LittleEndianImplicit ||
-            dataset.getOriginalXfer() == EXS_BigEndianImplicit ||
-            dataset.getOriginalXfer() == EXS_LittleEndianExplicit ||
-            dataset.getOriginalXfer() == EXS_BigEndianExplicit);
   }
 
 
@@ -376,18 +380,6 @@ namespace Orthanc
   ImageAccessor* DicomImageDecoder::DecodeUncompressedImage(DcmDataset& dataset,
                                                             unsigned int frame)
   {
-    if (!IsUncompressedImage(dataset))
-    {
-      throw OrthancException(ErrorCode_BadParameterType);
-    }
-
-    return DecodeUncompressedImageInternal(dataset, frame);
-  }
-
-
-  ImageAccessor* DicomImageDecoder::DecodeUncompressedImageInternal(DcmDataset& dataset,
-                                                                    unsigned int frame)
-  {
     ImageSource source;
     source.Setup(dataset, frame);
 
@@ -396,7 +388,7 @@ namespace Orthanc
      * Resize the target image.
      **/
 
-    std::auto_ptr<ImageAccessor> target(CreateImage(dataset));
+    std::auto_ptr<ImageAccessor> target(CreateImage(dataset, false));
 
     if (source.GetWidth() != target->GetWidth() ||
         source.GetHeight() != target->GetHeight())
@@ -415,7 +407,7 @@ namespace Orthanc
     bool fastVersionSuccess = false;
     PixelFormat sourceFormat;
     if (!info.IsPlanar() &&
-        info.ExtractPixelFormat(sourceFormat))
+        info.ExtractPixelFormat(sourceFormat, false))
     {
       try
       {
@@ -474,104 +466,184 @@ namespace Orthanc
   }
 
 
-#if ORTHANC_JPEG_LOSSLESS_ENABLED == 1
-  ImageAccessor* DicomImageDecoder::DecodeJpegLossless(DcmDataset& dataset,
-                                                       unsigned int frame)
+  ImageAccessor* DicomImageDecoder::ApplyCodec(const DcmCodec& codec,
+                                               const DcmCodecParameter& parameters,
+                                               DcmDataset& dataset,
+                                               unsigned int frame)
   {
-    if (!IsJpegLossless(dataset))
-    {
-      throw OrthancException(ErrorCode_BadParameterType);
-    }
-
-    DcmElement *element = NULL;
-    if (!dataset.findAndGetElement(ToDcmtkBridge::Convert(DICOM_TAG_PIXEL_DATA), element).good())
+    DcmPixelSequence* pixelSequence = FromDcmtkBridge::GetPixelSequence(dataset);
+    if (pixelSequence == NULL)
     {
       throw OrthancException(ErrorCode_BadFileFormat);
     }
 
-    DcmPixelData& pixelData = dynamic_cast<DcmPixelData&>(*element);
-    DcmPixelSequence* pixelSequence = NULL;
-    if (!pixelData.getEncapsulatedRepresentation
-        (dataset.getOriginalXfer(), NULL, pixelSequence).good())
-    {
-      throw OrthancException(ErrorCode_BadFileFormat);
-    }
-
-    std::auto_ptr<ImageAccessor> target(CreateImage(dataset));
-
-    /**
-     * The "DJLSLosslessDecoder" and "DJLSNearLosslessDecoder" in DCMTK
-     * are exactly the same, except for the "supportedTransferSyntax()"
-     * virtual function.
-     * http://support.dcmtk.org/docs/classDJLSDecoderBase.html
-     **/
-
-    DJLSLosslessDecoder decoder; DJLSCodecParameter parameters;
-    //DJLSNearLosslessDecoder decoder; DJLSCodecParameter parameters;
+    std::auto_ptr<ImageAccessor> target(CreateImage(dataset, true));
 
     Uint32 startFragment = 0;  // Default 
     OFString decompressedColorModel;  // Out
     DJ_RPLossless representationParameter;
-    OFCondition c = decoder.decodeFrame(&representationParameter, pixelSequence, &parameters, 
-                                        &dataset, frame, startFragment, target->GetBuffer(), 
-                                        target->GetSize(), decompressedColorModel);
+    OFCondition c = codec.decodeFrame(&representationParameter, 
+                                      pixelSequence, &parameters, 
+                                      &dataset, frame, startFragment, target->GetBuffer(), 
+                                      target->GetSize(), decompressedColorModel);
 
-    if (!c.good())
+    if (c.good())
     {
-      throw OrthancException(ErrorCode_InternalError);
+      return target.release();    
     }
-
-    return target.release();
+    else
+    {
+      LOG(ERROR) << "Cannot decode an image";
+      throw OrthancException(ErrorCode_BadFileFormat);
+    }
   }
-#endif
-
-
 
 
   ImageAccessor* DicomImageDecoder::Decode(ParsedDicomFile& dicom,
                                            unsigned int frame)
   {
     DcmDataset& dataset = *dicom.GetDcmtkObject().getDataset();
+    E_TransferSyntax syntax = dataset.getOriginalXfer();
 
-    if (IsUncompressedImage(dataset))
+    /**
+     * Deal with uncompressed, raw images.
+     * http://support.dcmtk.org/docs/dcxfer_8h-source.html
+     **/
+    if (syntax == EXS_Unknown ||
+        syntax == EXS_LittleEndianImplicit ||
+        syntax == EXS_BigEndianImplicit ||
+        syntax == EXS_LittleEndianExplicit ||
+        syntax == EXS_BigEndianExplicit)
     {
       return DecodeUncompressedImage(dataset, frame);
     }
 
+
 #if ORTHANC_JPEG_LOSSLESS_ENABLED == 1
-    if (IsJpegLossless(dataset))
+    /**
+     * Deal with JPEG-LS images.
+     **/
+
+    if (syntax == EXS_JPEGLSLossless ||
+        syntax == EXS_JPEGLSLossy)
     {
-      LOG(INFO) << "Decoding a JPEG-LS image";
-      return DecodeJpegLossless(dataset, frame);
+      DJLSCodecParameter parameters;
+      std::auto_ptr<DJLSDecoderBase> decoder;
+
+      switch (syntax)
+      {
+        case EXS_JPEGLSLossless:
+          LOG(INFO) << "Decoding a JPEG-LS lossless DICOM image";
+          decoder.reset(new DJLSLosslessDecoder);
+          break;
+          
+        case EXS_JPEGLSLossy:
+          LOG(INFO) << "Decoding a JPEG-LS near-lossless DICOM image";
+          decoder.reset(new DJLSNearLosslessDecoder);
+          break;
+
+        default:
+          throw OrthancException(ErrorCode_InternalError);
+      }
+    
+      return ApplyCodec(*decoder, parameters, dataset, frame);
     }
 #endif
 
 
 #if ORTHANC_JPEG_ENABLED == 1
-    // TODO Implement this part to speed up JPEG decompression
+    /**
+     * Deal with JPEG images.
+     **/
+
+    if (syntax == EXS_JPEGProcess1     ||  // DJDecoderBaseline
+        syntax == EXS_JPEGProcess2_4   ||  // DJDecoderExtended
+        syntax == EXS_JPEGProcess6_8   ||  // DJDecoderSpectralSelection (retired)
+        syntax == EXS_JPEGProcess10_12 ||  // DJDecoderProgressive (retired)
+        syntax == EXS_JPEGProcess14    ||  // DJDecoderLossless
+        syntax == EXS_JPEGProcess14SV1)    // DJDecoderP14SV1
+    {
+      // http://support.dcmtk.org/docs-snapshot/djutils_8h.html#a2a9695e5b6b0f5c45a64c7f072c1eb9d
+      DJCodecParameter parameters(
+        ECC_lossyYCbCr,  // Mode for color conversion for compression, Unused for decompression
+        EDC_photometricInterpretation,  // Perform color space conversion from YCbCr to RGB if DICOM photometric interpretation indicates YCbCr
+        EUC_default,     // Mode for UID creation, unused for decompression
+        EPC_default);    // Automatically determine whether color-by-plane is required from the SOP Class UID and decompressed photometric interpretation
+      std::auto_ptr<DJCodecDecoder> decoder;
+
+      switch (syntax)
+      {
+        case EXS_JPEGProcess1:
+          LOG(INFO) << "Decoding a JPEG baseline (process 1) DICOM image";
+          decoder.reset(new DJDecoderBaseline);
+          break;
+          
+        case EXS_JPEGProcess2_4 :
+          LOG(INFO) << "Decoding a JPEG baseline (processes 2 and 4) DICOM image";
+          decoder.reset(new DJDecoderExtended);
+          break;
+          
+        case EXS_JPEGProcess6_8:   // Retired
+          LOG(INFO) << "Decoding a JPEG spectral section, nonhierarchical (processes 6 and 8) DICOM image";
+          decoder.reset(new DJDecoderSpectralSelection);
+          break;
+          
+        case EXS_JPEGProcess10_12:   // Retired
+          LOG(INFO) << "Decoding a JPEG full progression, nonhierarchical (processes 10 and 12) DICOM image";
+          decoder.reset(new DJDecoderProgressive);
+          break;
+          
+        case EXS_JPEGProcess14:
+          LOG(INFO) << "Decoding a JPEG lossless, nonhierarchical (process 14) DICOM image";
+          decoder.reset(new DJDecoderLossless);
+          break;
+          
+        case EXS_JPEGProcess14SV1:
+          LOG(INFO) << "Decoding a JPEG lossless, nonhierarchical, first-order prediction (process 14 selection value 1) DICOM image";
+          decoder.reset(new DJDecoderP14SV1);
+          break;
+          
+        default:
+          throw OrthancException(ErrorCode_InternalError);
+      }
+    
+      return ApplyCodec(*decoder, parameters, dataset, frame);      
+    }
 #endif
+
+
+    if (syntax == EXS_RLELossless)
+    {
+      LOG(INFO) << "Decoding a RLE lossless DICOM image";
+      DcmRLECodecParameter parameters;
+      DcmRLECodecDecoder decoder;
+      return ApplyCodec(decoder, parameters, dataset, frame);
+    }
+
 
     /**
      * This DICOM image format is not natively supported by
-     * Orthanc. As a last resort, try and decode it through
-     * DCMTK. This will result in higher memory consumption. This is
-     * actually the second example of the following page:
+     * Orthanc. As a last resort, try and decode it through DCMTK by
+     * converting its transfer syntax to Little Endian. This will
+     * result in higher memory consumption. This is actually the
+     * second example of the following page:
      * http://support.dcmtk.org/docs/mod_dcmjpeg.html#Examples
      **/
     
     {
-      LOG(INFO) << "Using DCMTK to decode a compressed image";
+      LOG(INFO) << "Decoding a compressed image by converting its transfer syntax to Little Endian";
 
       std::auto_ptr<DcmDataset> converted(dynamic_cast<DcmDataset*>(dataset.clone()));
       converted->chooseRepresentation(EXS_LittleEndianExplicit, NULL);
 
       if (converted->canWriteXfer(EXS_LittleEndianExplicit))
       {
-        return DecodeUncompressedImageInternal(*converted, frame);
+        return DecodeUncompressedImage(*converted, frame);
       }
     }
 
-    return NULL;
+    LOG(ERROR) << "Cannot decode a DICOM image with the built-in decoder";
+    throw OrthancException(ErrorCode_BadFileFormat);
   }
 
 
@@ -652,5 +724,78 @@ namespace Orthanc
       default:
         throw OrthancException(ErrorCode_NotImplemented);
     }
+  }
+
+
+  void DicomImageDecoder::ApplyExtractionMode(std::auto_ptr<ImageAccessor>& image,
+                                              ImageExtractionMode mode)
+  {
+    if (image.get() == NULL)
+    {
+      throw OrthancException(ErrorCode_ParameterOutOfRange);
+    }
+
+    bool ok = false;
+
+    switch (mode)
+    {
+      case ImageExtractionMode_UInt8:
+        ok = TruncateDecodedImage(image, PixelFormat_Grayscale8, false);
+        break;
+
+      case ImageExtractionMode_UInt16:
+        ok = TruncateDecodedImage(image, PixelFormat_Grayscale16, false);
+        break;
+
+      case ImageExtractionMode_Int16:
+        ok = TruncateDecodedImage(image, PixelFormat_SignedGrayscale16, false);
+        break;
+
+      case ImageExtractionMode_Preview:
+        ok = PreviewDecodedImage(image);
+        break;
+
+      default:
+        throw OrthancException(ErrorCode_ParameterOutOfRange);
+    }
+
+    if (ok)
+    {
+      assert(image.get() != NULL);
+    }
+    else
+    {
+      throw OrthancException(ErrorCode_NotImplemented);
+    }
+  }
+
+
+  void DicomImageDecoder::ExtractPngImage(std::string& result,
+                                          std::auto_ptr<ImageAccessor>& image,
+                                          ImageExtractionMode mode)
+  {
+    ApplyExtractionMode(image, mode);
+
+    PngWriter writer;
+    writer.WriteToMemory(result, *image);
+  }
+
+
+  void DicomImageDecoder::ExtractJpegImage(std::string& result,
+                                           std::auto_ptr<ImageAccessor>& image,
+                                           ImageExtractionMode mode,
+                                           uint8_t quality)
+  {
+    if (mode != ImageExtractionMode_UInt8 &&
+        mode != ImageExtractionMode_Preview)
+    {
+      throw OrthancException(ErrorCode_ParameterOutOfRange);
+    }
+
+    ApplyExtractionMode(image, mode);
+
+    JpegWriter writer;
+    writer.SetQuality(quality);
+    writer.WriteToMemory(result, *image);
   }
 }
